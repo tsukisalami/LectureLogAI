@@ -1,0 +1,62 @@
+[
+    {
+        "id": 5,
+        "subject_id": 4,
+        "name": "first class",
+        "date": "2025-03-01",
+        "chapter": "1",
+        "created_at": "2025-03-01T03:11:23.615236",
+        "audio_path": "C:\\Programming\\AI\\Transcriber\\app\\data\\recordings\\recording_20250301-031139.wav",
+        "transcript": " This class will be about the Second World War and how it impacted the lives of Europeans.",
+        "summary": " **Impact of the Second World War on Europeans**\n\n- The lecture focuses on the Second World War and its profound effects on European societies.\n- The war, which began in 1939 and ended in 1945, was a global conflict involving most of the world's great powers.\n- The main participants were the Axis powers (Germany, Italy, Japan) and the Allies (France, United Kingdom, United States, Soviet Union).\n- The war resulted in massive destruction, loss of life, and displacement of populations across Europe.\n- The Holocaust, a genocide orchestrated by Nazi Germany, is one of the most horrific events that occurred during this period, resulting in the death of six million Jews.\n- The war also led to significant political changes, including the fall of fascist regimes in Italy and Germany and the establishment of communist rule in Eastern Europe under Soviet influence.\n- Post-war Europe was divided into two distinct blocs: NATO (North Atlantic Treaty Organization) and the Warsaw Pact, reflecting the ideological divide between Western democracies and Soviet-controlled states.\n- The war's economic impact was severe, leading to prolonged recovery and rebuilding efforts in many European countries.\n- Europe's cultural landscape was also altered during this period, with artists and intellectuals often exiled or silenced, and new artistic movements emerging in response to the war's aftermath.\n- The Second World War had profound and lasting effects on Europeans, shaping the continent's political, social, and cultural landscapes for decades to come.",
+        "flashcards": []
+    },
+    {
+        "id": 7,
+        "subject_id": 6,
+        "name": "firtst class",
+        "date": "2025-03-01",
+        "chapter": null,
+        "created_at": "2025-03-01T03:46:39.280578",
+        "audio_path": "C:\\Programming\\AI\\Transcriber\\app\\data\\recordings\\recording_20250301-034735.wav",
+        "transcript": " This first class is going to pertain about the timming of the shrew. So the timming of the shrew is a play written by English Prele writer Shakespeare. So what can anyone tell me about Shakespeare? Indeed Shakespeare was 65 when he died and he left behind a family of four with three dogs and two cats as well which was not a very known thing about him. He did make a lot of plays about these dogs and cats. They had an important role in his life. They were really close to him. Thank you. See you at the other class.",
+        "summary": " **Lecture Summary: The Timing of the Shrew by William Shakespeare**\n\n- Discussed: The play \"The Timing of the Shrew\" written by William Shakespeare.\n- Key Figure: William Shakespeare, an English playwright who died at the age of 65.\n- Unique Facts: He left behind a family consisting of four members and had three dogs and two cats. These pets played significant roles in his life and were often featured in his plays.\n- Main Focus: Explored the role of animals, particularly dogs and cats, in Shakespeare's life and works.",
+        "flashcards": []
+    },
+    {
+        "id": 8,
+        "subject_id": 6,
+        "name": "class on shakespeare's dog",
+        "date": "2025-03-01",
+        "chapter": null,
+        "created_at": "2025-03-01T03:58:54.600410",
+        "audio_path": "C:\\Programming\\AI\\Transcriber\\app\\data\\recordings\\recording_20250301-035936.wav",
+        "transcript": " Hello class, this class is going to be about Shakespeare's dog. So Shakespeare's dog was named William, pretty funny considering the fact that William Shakespeare's name William, whatever, William, I mean the dog was three years old when William Shakespeare wrote Macbeth and the character of Macbeth is actually inspired by his dog and the black clothes that he wears in a scene are based off of the black color of his dogs for. Thank you, that is the rest, that is the end of class.",
+        "summary": " **Summary: Shakespeare's Dog and its Influence on Macbeth**\n\n1. The lecture focuses on the lesser-known fact that William Shakespeare had a dog named William.\n2. This dog was three years old when Shakespeare wrote \"Macbeth.\"\n3. The character of Macbeth is inspired, in part, by Shakespeare's dog.\n4. A significant scene in \"Macbeth\" features Macbeth wearing black clothes, which are based on the dark color of his namesake dog.\n5. This connection highlights the symbolic use of animals and colors in Shakespeare's works.\n6. The lecture emphasizes a unique aspect of Shakespeare's creative process, drawing inspiration from his own life.\n7. This instance illustrates how elements of Shakespeare's personal life may have influenced his dramatic works.\n8. The dog William is not only a quirky fact about the famous playwright but also a symbolic connection to one of his most renowned plays, \"Macbeth.\"\n9. While the role of the dog in Macbeth is not explicitly stated, its influence adds an interesting layer to the interpretation of the character.\n10. This lesson serves as a reminder that Shakespeare's works are rich with symbolism and personal connections, making for intriguing exploration and analysis.",
+        "flashcards": []
+    },
+    {
+        "id": 4,
+        "subject_id": 3,
+        "name": "1",
+        "date": "2025-03-01",
+        "chapter": null,
+        "created_at": "2025-03-01T04:37:23.754045",
+        "audio_path": "C:\\Programming\\AI\\Transcriber\\app\\data\\recordings\\recording_20250301-043854.wav",
+        "transcript": " Alright, so the first thing about rockets that you up to know is that they use a lot of fuel, therefore they can actually melt the concrete underneath them when they are launched into space. So that reason scientists decided to pour water, a lot of water, over 10,000 liters per second for the whole 60 second large sequence of these rockets. And this leads to the concrete and the metal structures being wet, so therefore they do not melt. And it also absorbs a lot of the energy from the rocket propulsion, which if it wasn't the case for the water, windows and buildings would be destroyed for hundreds of meters around it. So it is definitely a crucial element in that sense. Thank you. The end of class.",
+        "summary": " **Impact of Rockets on Launch Surface**\n\n1. Rocket launches consume a large amount of fuel, which can potentially cause the concrete underneath them to melt during takeoff.\n2. To prevent this, scientists pour an enormous amount of water over 10,000 liters per second for the entire 60-second launch sequence.\n3. The primary purpose of the water is to keep the concrete and metal structures wet, thereby preventing melting.\n4. Water also helps in absorbing a significant portion of the rocket's propulsion energy, which would otherwise cause destruction of nearby windows and buildings for hundreds of meters around the launch site.\n5. The use of water during rocket launches is thus crucial to ensure safety and prevent damage to infrastructure.",
+        "flashcards": []
+    },
+    {
+        "id": 5,
+        "subject_id": 3,
+        "name": "2",
+        "date": "2025-03-01",
+        "chapter": null,
+        "created_at": "2025-03-01T04:47:31.273598",
+        "audio_path": null,
+        "transcript": null,
+        "summary": null,
+        "flashcards": []
+    }
+]

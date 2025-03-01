@@ -1,0 +1,7 @@
+{
+    "theme": "dark",
+    "ollama_model": "mistral:latest",
+    "ollama_host": "http://localhost:11434",
+    "whisper_model_size": "base",
+    "summarization_preset": "Reserved & developed"
+}
