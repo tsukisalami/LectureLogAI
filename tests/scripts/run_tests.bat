@@ -4,7 +4,7 @@ echo ===============================
 
 :: Test basic Ollama connectivity
 echo Testing basic Ollama connectivity...
-python test_ollama.py
+python ..\..\tests\test_ollama.py
 echo.
 
 :: Ask for audio file for the second test
@@ -16,7 +16,7 @@ if "%AUDIO_FILE%"=="" (
     echo No audio file provided, skipping fallback transcription test.
 ) else (
     echo Testing fallback transcription with %AUDIO_FILE%...
-    python test_fallback_transcription.py "%AUDIO_FILE%"
+    python ..\..\tests\test_fallback_transcription.py "%AUDIO_FILE%"
 )
 
 echo.
