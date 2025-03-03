@@ -28,6 +28,43 @@ A Python application that helps you study more effectively by:
 - Microphone for recording
 - Various Python libraries (see requirements.txt)
 
+## First-Time Setup
+
+When you first clone this repository, you'll start with a clean slate:
+
+1. **Clone the repository**:
+   ```
+   git clone https://github.com/YOUR_USERNAME/Transcriber.git
+   cd Transcriber
+   ```
+
+2. **Set up a virtual environment**:
+   ```
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies**:
+   ```
+   pip install -r requirements.txt
+   ```
+
+4. **Initial Ollama setup**:
+   - Install Ollama from [ollama.ai](https://ollama.ai)
+   - Pull the recommended model: `ollama pull mistral:latest`
+
+5. **Launch the application**:
+   ```
+   python -m app.main
+   ```
+
+6. **First-time configuration**:
+   - Create your first subject by clicking "Add Subject"
+   - Create your first class within that subject
+   - Adjust settings by clicking on Settings in the menu
+
+The app will automatically create necessary data files on first run. Your data will be stored in the `app/data` directory.
+
 ## Installation
 
 ### System Requirements

@@ -124,22 +124,8 @@ class AIProcessor:
                 return self._fallback_transcribe(audio_file_path)
             
             # Check for ffmpeg before proceeding with Whisper
-            try:
-                # Try to run a simple ffmpeg command to verify it's installed
-                subprocess_result = subprocess.run(['ffmpeg', '-version'], 
-                                                  stdout=subprocess.PIPE, 
-                                                  stderr=subprocess.PIPE,
-                                                  timeout=3)
-                if subprocess_result.returncode != 0:
-                    print("Warning: ffmpeg test command returned non-zero exit code")
-                    logging.warning("ffmpeg test command returned non-zero exit code")
-                    raise Exception("ffmpeg test failed")
-            except (subprocess.SubprocessError, FileNotFoundError, Exception) as e:
-                print(f"Error: ffmpeg is not installed or not in PATH: {str(e)}")
-                logging.error(f"ffmpeg is not installed or not in PATH: {str(e)}")
-                
-                # Try to automatically install ffmpeg
-                print("Attempting automatic ffmpeg installation...")
+            if not self._check_ffmpeg_available():
+                # Try to automatically install ffmpeg if needed
                 install_success, install_message = self._attempt_ffmpeg_install()
                 
                 if install_success:
@@ -393,27 +379,59 @@ class AIProcessor:
         if system:
             data["system"] = system
         
-        try:
-            # Add a 10 second timeout to prevent hanging indefinitely
-            response = requests.post(
-                f"{self.ollama_host}/api/generate",
-                headers=headers,
-                data=json.dumps(data),
-                timeout=10  # Add a 10 second timeout
-            )
-            
-            if response.status_code == 200:
-                return response.json().get("response", "")
-            else:
-                print(f"Error: {response.status_code}")
-                print(response.text)
-                return f"Error: {response.status_code}"
-        except requests.exceptions.Timeout:
-            print("Timeout connecting to Ollama")
-            return "Error: Timeout connecting to Ollama service. Please ensure Ollama is running."
-        except Exception as e:
-            print(f"Exception: {e}")
-            return f"Error: {e}"
+        # Retry mechanism with increased timeout
+        max_retries = 3
+        timeout_seconds = 15  # Increase timeout from 10 to 15 seconds
+        error_message = ""
+        
+        for attempt in range(max_retries):
+            try:
+                logging.info(f"Connecting to Ollama at {self.ollama_host} (attempt {attempt+1}/{max_retries})")
+                response = requests.post(
+                    f"{self.ollama_host}/api/generate",
+                    headers=headers,
+                    data=json.dumps(data),
+                    timeout=timeout_seconds
+                )
+                
+                if response.status_code == 200:
+                    return response.json().get("response", "")
+                else:
+                    error_message = f"Error: {response.status_code} - {response.text}"
+                    logging.error(f"Ollama API error: {error_message}")
+                    # Wait before retrying
+                    if attempt < max_retries - 1:
+                        time.sleep(2)
+            except requests.exceptions.Timeout:
+                error_message = f"Timeout connecting to Ollama after {timeout_seconds} seconds"
+                logging.error(error_message)
+                # Wait before retrying
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+            except requests.exceptions.ConnectionError:
+                error_message = f"Connection error to Ollama at {self.ollama_host}"
+                logging.error(error_message)
+                # Wait before retrying
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+            except Exception as e:
+                error_message = f"Exception during Ollama connection: {e}"
+                logging.error(error_message)
+                # Wait before retrying
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+        
+        # If we get here, all retries failed
+        detailed_error = (
+            f"Error: {error_message}\n\n"
+            f"Troubleshooting steps:\n"
+            f"1. Verify Ollama is running (should see a response at {self.ollama_host} in browser)\n"
+            f"2. Check if the model '{self.model_name}' is available (run 'ollama list')\n"
+            f"3. Try restarting Ollama\n"
+            f"4. Check firewall settings"
+        )
+        logging.error(f"All Ollama connection attempts failed: {error_message}")
+        return f"Error: Timeout connecting to Ollama service. Please ensure Ollama is running.\n\n{detailed_error}"
     
     def summarize_text(self, text, num_sentences=10, language=None):
         """Summarize the provided text using LLM.
@@ -702,24 +720,110 @@ class AIProcessor:
             tuple: (is_available, message) where is_available is a boolean and
                    message is a string with status or error information
         """
+        max_retries = 2
+        timeout_seconds = 8  # Increase timeout
+        
+        for attempt in range(max_retries):
+            try:
+                # Check if Ollama is running with a timeout
+                logging.info(f"Checking Ollama connection at {self.ollama_host} (attempt {attempt+1}/{max_retries})")
+                response = requests.get(f"{self.ollama_host}/api/tags", timeout=timeout_seconds)
+                if response.status_code != 200:
+                    error_message = f"Ollama server returned status code: {response.status_code}"
+                    logging.error(error_message)
+                    if attempt < max_retries - 1:
+                        time.sleep(1)
+                        continue
+                    return False, error_message
+                
+                # Check if the model is available
+                available_models = response.json().get("models", [])
+                model_names = [model.get("name") for model in available_models]
+                
+                if self.model_name not in model_names:
+                    return False, f"Model '{self.model_name}' is not available. Please run 'ollama pull {self.model_name}' or select a different model."
+                
+                return True, f"Model '{self.model_name}' is available"
+            except requests.exceptions.Timeout:
+                error_message = f"Timeout connecting to Ollama server after {timeout_seconds} seconds"
+                logging.error(error_message)
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+            except requests.exceptions.ConnectionError:
+                error_message = f"Connection error to Ollama at {self.ollama_host}"
+                logging.error(error_message)
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+            except Exception as e:
+                error_message = f"Error connecting to Ollama: {e}"
+                logging.error(error_message)
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+        
+        # All retries failed
+        detailed_error = (
+            f"Error connecting to Ollama: {error_message}\n\n"
+            f"Troubleshooting steps:\n"
+            f"1. Verify Ollama is running\n"
+            f"2. Try accessing {self.ollama_host} in your browser\n"
+            f"3. Check if Ollama is bound to localhost (default)\n"
+            f"4. Restart Ollama and try again"
+        )
+        return False, detailed_error
+    
+    def _check_ffmpeg_available(self):
+        """Check if ffmpeg is available, either in PATH or in the local ffmpeg directory.
+        
+        Returns:
+            bool: True if ffmpeg is available, False otherwise.
+        """
+        # First check if ffmpeg is in the local directory
+        import os
+        import platform
+        
+        # Define the path to the local ffmpeg executable
+        local_ffmpeg_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ffmpeg")
+        
+        if platform.system() == "Windows":
+            local_ffmpeg_exe = os.path.join(local_ffmpeg_dir, "ffmpeg.exe")
+        else:
+            local_ffmpeg_exe = os.path.join(local_ffmpeg_dir, "ffmpeg")
+        
+        # Check if the local ffmpeg executable exists
+        if os.path.isfile(local_ffmpeg_exe):
+            logging.info(f"FFmpeg found in local directory: {local_ffmpeg_exe}")
+            
+            # Add the local ffmpeg directory to the PATH environment variable for this process
+            os.environ["PATH"] = local_ffmpeg_dir + os.pathsep + os.environ["PATH"]
+            
+            # Verify it works
+            try:
+                subprocess_result = subprocess.run(['ffmpeg', '-version'], 
+                                                stdout=subprocess.PIPE, 
+                                                stderr=subprocess.PIPE,
+                                                timeout=3)
+                if subprocess_result.returncode == 0:
+                    logging.info("Local FFmpeg installation verified")
+                    return True
+            except:
+                logging.warning("Local FFmpeg found but verification failed")
+        
+        # If not in local directory, check if it's in PATH
         try:
-            # Check if Ollama is running with a timeout
-            response = requests.get(f"{self.ollama_host}/api/tags", timeout=5)
-            if response.status_code != 200:
-                return False, "Ollama server is not running"
-            
-            # Check if the model is available
-            available_models = response.json().get("models", [])
-            model_names = [model.get("name") for model in available_models]
-            
-            if self.model_name not in model_names:
-                return False, f"Model '{self.model_name}' is not available. Please run 'ollama pull {self.model_name}' or select a different model."
-            
-            return True, f"Model '{self.model_name}' is available"
-        except requests.exceptions.Timeout:
-            return False, "Timeout connecting to Ollama server"
-        except Exception as e:
-            return False, f"Error connecting to Ollama: {e}"
+            # Try to run a simple ffmpeg command to verify it's installed
+            subprocess_result = subprocess.run(['ffmpeg', '-version'], 
+                                             stdout=subprocess.PIPE, 
+                                             stderr=subprocess.PIPE,
+                                             timeout=3)
+            if subprocess_result.returncode == 0:
+                logging.info("FFmpeg found in PATH")
+                return True
+            else:
+                logging.warning("FFmpeg command returned non-zero exit code")
+                return False
+        except (subprocess.SubprocessError, FileNotFoundError, Exception) as e:
+            logging.error(f"FFmpeg is not installed or not in PATH: {str(e)}")
+            return False
     
     def _attempt_ffmpeg_install(self):
         """Attempt to download and install ffmpeg for the user.
@@ -735,12 +839,32 @@ class AIProcessor:
             if platform.system() != "Windows":
                 return False, "Automatic ffmpeg installation is only supported on Windows."
             
-            # Create a temporary directory
+            # Check if ffmpeg is already installed in the app's directory
+            import os
+            local_ffmpeg_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ffmpeg")
+            local_ffmpeg_exe = os.path.join(local_ffmpeg_dir, "ffmpeg.exe")
+            
+            if os.path.isfile(local_ffmpeg_exe):
+                # Verify it works
+                try:
+                    # Add the local ffmpeg directory to the PATH
+                    os.environ["PATH"] = local_ffmpeg_dir + os.pathsep + os.environ["PATH"]
+                    
+                    subprocess_result = subprocess.run(['ffmpeg', '-version'], 
+                                                   stdout=subprocess.PIPE, 
+                                                   stderr=subprocess.PIPE,
+                                                   timeout=3)
+                    if subprocess_result.returncode == 0:
+                        return True, f"FFmpeg is already installed at {local_ffmpeg_exe}"
+                except:
+                    # If verification fails, continue with fresh install
+                    logging.warning("Found existing FFmpeg but verification failed, proceeding with fresh install")
+            
+            # Import needed modules
             import tempfile
             import zipfile
             import urllib.request
             import shutil
-            import os
             
             # Inform the user
             print("Attempting to download ffmpeg for Windows...")
@@ -772,12 +896,10 @@ class AIProcessor:
                     return False, "Could not find ffmpeg.exe in the downloaded package."
                 
                 # Create a directory for ffmpeg in the app's directory if it doesn't exist
-                local_ffmpeg_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "ffmpeg")
                 os.makedirs(local_ffmpeg_dir, exist_ok=True)
                 
                 # Copy the ffmpeg executable and DLLs to the ffmpeg directory
                 ffmpeg_exe = os.path.join(ffmpeg_dir, "ffmpeg.exe")
-                local_ffmpeg_exe = os.path.join(local_ffmpeg_dir, "ffmpeg.exe")
                 shutil.copy2(ffmpeg_exe, local_ffmpeg_exe)
                 
                 # Add the local ffmpeg directory to the PATH environment variable for this process
@@ -786,9 +908,9 @@ class AIProcessor:
                 # Verify the installation
                 try:
                     subprocess_result = subprocess.run(['ffmpeg', '-version'], 
-                                                      stdout=subprocess.PIPE, 
-                                                      stderr=subprocess.PIPE,
-                                                      timeout=3)
+                                                   stdout=subprocess.PIPE, 
+                                                   stderr=subprocess.PIPE,
+                                                   timeout=3)
                     if subprocess_result.returncode == 0:
                         return True, f"ffmpeg was downloaded and installed successfully to {local_ffmpeg_dir}"
                     else:
