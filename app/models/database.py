@@ -2,6 +2,7 @@ import json
 import os
 import datetime
 from pathlib import Path
+import shutil
 
 class Database:
     """A simple JSON-based database to store and retrieve application data."""
@@ -16,25 +17,41 @@ class Database:
         # Ensure the data directory exists
         os.makedirs(self.data_dir, exist_ok=True)
         
+        # Ensure recordings directory exists
+        recordings_dir = self.data_dir / 'recordings'
+        os.makedirs(recordings_dir, exist_ok=True)
+        
         # Initialize data files if they don't exist
-        if not self.subjects_file.exists():
-            with open(self.subjects_file, 'w') as f:
-                json.dump([], f)
-                
-        if not self.classes_file.exists():
-            with open(self.classes_file, 'w') as f:
-                json.dump([], f)
-                
-        # Initialize settings file with defaults if it doesn't exist
-        if not self.settings_file.exists():
-            default_settings = {
-                'theme': 'dark',  # Default to dark theme
-                'ollama_model': 'mistral:latest',
-                'ollama_host': 'http://localhost:11434',
-                'whisper_model_size': 'base'
-            }
-            with open(self.settings_file, 'w') as f:
-                json.dump(default_settings, f, indent=4)
+        self._initialize_file_from_template(self.subjects_file)
+        self._initialize_file_from_template(self.classes_file)
+        self._initialize_file_from_template(self.settings_file)
+    
+    def _initialize_file_from_template(self, file_path):
+        """Initialize a file from a template if it doesn't exist."""
+        if not file_path.exists():
+            # Check if template file exists
+            template_path = file_path.with_suffix('.template.json')
+            if template_path.exists():
+                # Use template file as starting point
+                shutil.copy2(template_path, file_path)
+            else:
+                # Create empty file with appropriate structure
+                if file_path.name == 'subjects.json' or file_path.name == 'classes.json':
+                    with open(file_path, 'w') as f:
+                        json.dump([], f, indent=4)
+                elif file_path.name == 'settings.json':
+                    default_settings = {
+                        'theme': 'dark',  # Default to dark theme
+                        'ollama_model': 'mistral:latest',
+                        'ollama_host': 'http://localhost:11434',
+                        'whisper_model_size': 'medium',
+                        'summarization_preset': 'Reserved & concise',
+                        'title_font_size': 30,
+                        'heading_font_size': 18,
+                        'text_font_size': 12
+                    }
+                    with open(file_path, 'w') as f:
+                        json.dump(default_settings, f, indent=4)
     
     def get_subjects(self):
         """Get the list of all subjects."""

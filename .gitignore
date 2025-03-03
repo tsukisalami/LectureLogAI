@@ -42,20 +42,24 @@ ffmpeg/*.dll
 *.lib
 *.exe
 
-# Local recordings and data files
-app/data/recordings/*.wav
+# User data - exclude all personal content
 app/data/recordings/*
+app/data/subjects.json
+app/data/classes.json
+app/data/settings.json
+app/data/*.json
+app/data/*.db
+app/data/*.sqlite
 
-# User-specific files
+# Only include empty directories with placeholder files
+!app/data/
+!app/data/recordings/
+!app/data/recordings/.gitkeep
+
+# OS specific files
 .DS_Store
 Thumbs.db
 
 # Git
 .git/objects/*
-.git/refs/*
-
-# Include only essential data
-!app/data/
-!app/data/settings.json
-!app/data/classes.json
-!app/data/*.json 
+.git/refs/* 
