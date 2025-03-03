@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QDateEdit, QTextEdit, QProgressDialog, QCheckBox,
     QProgressBar, QGroupBox, QRadioButton, QButtonGroup,
     QApplication, QAction, QSlider, QStyle, QToolButton,
-    QShortcut
+    QShortcut, QSpinBox
 )
 from PyQt5.QtCore import Qt, QDateTime, QTimer, pyqtSignal, QObject, QUrl, QSize
 from PyQt5.QtGui import QFont, QIcon, QPalette, QColor
@@ -398,12 +398,36 @@ class SettingsDialog(QDialog):
             "Reserved: Less extrapolation, sticks to transcript content\n"
             "Outspoken: More creative, may add relevant context\n"
             "Concise: Shorter summaries\n"
-            "Developed: Longer, more detailed summaries"
+            "Developed: More detailed summaries"
         )
         preset_help.setWordWrap(True)
-        
-        ollama_layout.addRow("Summarization Style:", self.summarization_preset_combo)
+        ollama_layout.addRow("Summarization Preset:", self.summarization_preset_combo)
         ollama_layout.addRow("", preset_help)
+        
+        # Summary Formatting options
+        summary_format_group = QGroupBox("Summary Formatting")
+        summary_format_layout = QFormLayout()
+        
+        # Font size for main titles
+        self.title_font_size = QSpinBox()
+        self.title_font_size.setRange(12, 48)
+        self.title_font_size.setValue(self.settings.get('title_font_size', 30))
+        summary_format_layout.addRow("Title Font Size:", self.title_font_size)
+        
+        # Font size for section headings
+        self.heading_font_size = QSpinBox()
+        self.heading_font_size.setRange(10, 36)
+        self.heading_font_size.setValue(self.settings.get('heading_font_size', 18))
+        summary_format_layout.addRow("Heading Font Size:", self.heading_font_size)
+        
+        # Font size for normal text
+        self.text_font_size = QSpinBox()
+        self.text_font_size.setRange(8, 24)
+        self.text_font_size.setValue(self.settings.get('text_font_size', 12))
+        summary_format_layout.addRow("Text Font Size:", self.text_font_size)
+        
+        summary_format_group.setLayout(summary_format_layout)
+        appearance_layout.addWidget(summary_format_group)
         
         # Safe mode checkbox
         self.safe_mode_cb = QCheckBox("Enable Safe Mode for transcription")
@@ -477,12 +501,20 @@ class SettingsDialog(QDialog):
             whisper_model_size = self.whisper_model_combo.currentText()
             summarization_preset = self.summarization_preset_combo.currentText()
             
+            # Get font size settings
+            title_font_size = self.title_font_size.value()
+            heading_font_size = self.heading_font_size.value()
+            text_font_size = self.text_font_size.value()
+            
             # Update settings
             self.settings['theme'] = theme
             self.settings['ollama_host'] = ollama_host
             self.settings['ollama_model'] = ollama_model
             self.settings['whisper_model_size'] = whisper_model_size
             self.settings['summarization_preset'] = summarization_preset
+            self.settings['title_font_size'] = title_font_size
+            self.settings['heading_font_size'] = heading_font_size
+            self.settings['text_font_size'] = text_font_size
             
             # Save to database
             if self.database:
@@ -677,6 +709,11 @@ class MainWindow(QMainWindow):
         # Transcript tab
         self.transcript_tab = QWidget()
         self.transcript_layout = QVBoxLayout(self.transcript_tab)
+        
+        # Add audio container for the media player
+        self.audio_container = QWidget()
+        self.audio_container.setMinimumHeight(100)
+        self.transcript_layout.addWidget(self.audio_container)
         
         self.transcript_text = QTextEdit()
         self.transcript_text.setReadOnly(True)
@@ -898,191 +935,228 @@ class MainWindow(QMainWindow):
             self.transcribe_button.setEnabled(False)
             self.log_to_console("No audio recording available for this class. Please record audio first.")
             
-            # Clear any previous audio player
-            if hasattr(self, 'audio_player_widget'):
-                self.audio_player_widget.setParent(None)
-                self.audio_player_widget = None
+            # Hide any previous audio player
+            if hasattr(self, 'audio_container'):
+                self.audio_container.setVisible(False)
+                
+            # Stop any playing audio
+            if hasattr(self, 'media_player') and self.media_player:
+                try:
+                    self.media_player.stop()
+                except Exception as e:
+                    logging.warning(f"Error stopping media player: {str(e)}")
     
     def create_audio_player_ui(self, audio_path, audio_filename):
-        """Create a mini audio player UI for the given audio file."""
-        # Create a widget to hold the audio player UI if it doesn't exist
-        if hasattr(self, 'audio_player_widget'):
-            self.audio_player_widget.setParent(None)
+        """Create and setup the audio player UI elements."""
+        # Clean up any existing audio player
+        if hasattr(self, 'media_player') and self.media_player:
+            try:
+                self.media_player.stop()
+            except Exception as e:
+                logging.warning(f"Error stopping previous media player: {str(e)}")
         
-        self.audio_player_widget = QWidget()
-        player_layout = QVBoxLayout(self.audio_player_widget)
-        player_layout.setContentsMargins(10, 10, 10, 10)
+        # Clear the audio container
+        if hasattr(self, 'audio_container') and self.audio_container:
+            # Clear the previous layout
+            if self.audio_container.layout():
+                # Remove all widgets from the layout
+                while self.audio_container.layout().count():
+                    item = self.audio_container.layout().takeAt(0)
+                    if item.widget():
+                        item.widget().deleteLater()
+            else:
+                # Create a new layout if one doesn't exist
+                self.audio_container.setLayout(QVBoxLayout())
         
-        # Apply styling to make the player stand out
-        is_dark = self.settings.get('theme') == 'dark'
-        if is_dark:
-            self.audio_player_widget.setStyleSheet("""
-                QWidget {
-                    background-color: #3a3a3a;
-                    border-radius: 6px;
-                    padding: 5px;
-                }
-                QLabel {
-                    color: #e0e0e0;
-                }
-                QSlider::handle:horizontal {
-                    background: #6c9ef8;
-                    border: none;
-                    width: 10px;
-                    margin: -4px 0;
+        # Create a widget to hold the audio player components
+        audio_player = QWidget()
+        audio_layout = QVBoxLayout(audio_player)
+        audio_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Add styling to the audio player
+        if self.is_dark_theme:
+            audio_player.setStyleSheet("""
+                QWidget { 
+                    background-color: #333; 
+                    border: 1px solid #555;
                     border-radius: 5px;
                 }
+                QLabel { color: #ddd; }
+                QPushButton { 
+                    background-color: #444; 
+                    border: 1px solid #666;
+                    border-radius: 3px;
+                    padding: 5px;
+                }
+                QPushButton:hover { background-color: #555; }
                 QSlider::groove:horizontal {
-                    border: 1px solid #5c5c5c;
-                    height: 4px;
-                    background: #2a2a2a;
-                    margin: 0px;
-                    border-radius: 2px;
+                    height: 8px;
+                    background: #555;
+                    border-radius: 4px;
+                }
+                QSlider::handle:horizontal {
+                    background: #999;
+                    border: 1px solid #777;
+                    width: 14px;
+                    margin: -4px 0;
+                    border-radius: 7px;
                 }
             """)
         else:
-            self.audio_player_widget.setStyleSheet("""
-                QWidget {
-                    background-color: #f0f0f0;
-                    border: 1px solid #d0d0d0;
-                    border-radius: 6px;
-                    padding: 5px;
-                }
-                QSlider::handle:horizontal {
-                    background: #0078d7;
-                    border: none;
-                    width: 10px;
-                    margin: -4px 0;
+            audio_player.setStyleSheet("""
+                QWidget { 
+                    background-color: #f0f0f0; 
+                    border: 1px solid #ccc;
                     border-radius: 5px;
                 }
+                QLabel { color: #333; }
+                QPushButton { 
+                    background-color: #e5e5e5; 
+                    border: 1px solid #ccc;
+                    border-radius: 3px;
+                    padding: 5px;
+                }
+                QPushButton:hover { background-color: #d0d0d0; }
                 QSlider::groove:horizontal {
-                    border: 1px solid #b0b0b0;
-                    height: 4px;
-                    background: #e0e0e0;
-                    margin: 0px;
-                    border-radius: 2px;
+                    height: 8px;
+                    background: #ddd;
+                    border-radius: 4px;
+                }
+                QSlider::handle:horizontal {
+                    background: #999;
+                    border: 1px solid #777;
+                    width: 14px;
+                    margin: -4px 0;
+                    border-radius: 7px;
                 }
             """)
         
-        # Add file info with an icon
-        file_info_layout = QHBoxLayout()
-        file_label = QLabel(f"🎙️ Recording: {audio_filename}")
-        font = file_label.font()
-        font.setBold(True)
-        file_label.setFont(font)
-        file_info_layout.addWidget(file_label)
-        player_layout.addLayout(file_info_layout)
-        
-        # Add playback controls
+        # Create playback controls
         controls_layout = QHBoxLayout()
         
-        # Play/pause button
-        self.play_button = QToolButton()
+        # Play/Pause button
+        self.play_button = QPushButton()
+        self.play_button.setEnabled(False)
         self.play_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.play_button.clicked.connect(self.toggle_playback)
-        self.play_button.setToolTip("Play/Pause (Spacebar)")
-        self.play_button.setIconSize(QSize(24, 24))
         controls_layout.addWidget(self.play_button)
         
-        # Position slider
+        # Current time display
+        self.time_label = QLabel("00:00 / 00:00")
+        controls_layout.addWidget(self.time_label)
+        
+        # Seek slider
         self.position_slider = QSlider(Qt.Horizontal)
         self.position_slider.setRange(0, 0)
         self.position_slider.sliderMoved.connect(self.set_position)
-        self.position_slider.setToolTip("Seek")
         controls_layout.addWidget(self.position_slider)
         
-        # Time display
-        self.time_label = QLabel("0:00 / 0:00")
-        controls_layout.addWidget(self.time_label)
-        
-        # Volume control
-        volume_button = QToolButton()
-        volume_button.setIcon(self.style().standardIcon(QStyle.SP_MediaVolume))
-        volume_button.setToolTip("Volume")
-        controls_layout.addWidget(volume_button)
+        # Volume controls
+        volume_label = QLabel()
+        volume_label.setPixmap(self.style().standardPixmap(QStyle.SP_MediaVolume))
+        controls_layout.addWidget(volume_label)
         
         self.volume_slider = QSlider(Qt.Horizontal)
         self.volume_slider.setRange(0, 100)
-        self.volume_slider.setValue(70)  # Default volume: 70%
-        self.volume_slider.setMaximumWidth(100)
+        self.volume_slider.setValue(70)
+        self.volume_slider.setFixedWidth(100)
         self.volume_slider.valueChanged.connect(self.set_volume)
-        self.volume_slider.setToolTip("Adjust Volume")
         controls_layout.addWidget(self.volume_slider)
         
-        player_layout.addLayout(controls_layout)
+        # File info label
+        file_info_layout = QHBoxLayout()
+        file_info_label = QLabel(f"Audio File: {audio_filename}")
+        file_info_layout.addWidget(file_info_label)
+        file_info_layout.addStretch()
         
-        # Removed the tip text about spacebar shortcut
+        # Add layouts to the main audio layout
+        audio_layout.addLayout(file_info_layout)
+        audio_layout.addLayout(controls_layout)
         
-        # Insert the audio player widget at the top of the right content area
-        if self.content_layout.count() > 0:
-            # Insert before the first item (the tab widget)
-            self.content_layout.insertWidget(0, self.audio_player_widget)
-        else:
-            self.content_layout.addWidget(self.audio_player_widget)
+        # Add the audio player to the container
+        self.audio_container.layout().addWidget(audio_player)
         
-        # Set the media content
-        self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(audio_path)))
-        self.set_volume(self.volume_slider.value())
+        # Reset or create a new QMediaPlayer
+        if not hasattr(self, 'media_player') or self.media_player is None:
+            self.media_player = QMediaPlayer()
         
-        # Add keyboard shortcut for play/pause
-        self.spacebar_shortcut = QShortcut(QKeySequence(Qt.Key_Space), self)
-        self.spacebar_shortcut.activated.connect(self.toggle_playback)
+        # Connect slots
+        self.media_player.stateChanged.connect(self.media_state_changed)
+        self.media_player.positionChanged.connect(self.update_position)
+        self.media_player.durationChanged.connect(self.update_duration)
         
-        # Update UI
-        self.update_duration(self.media_player.duration())
-    
+        # Set media content
+        try:
+            audio_url = QUrl.fromLocalFile(audio_path)
+            content = QMediaContent(audio_url)
+            self.media_player.setMedia(content)
+            self.media_player.setVolume(70)
+            
+            # Enable the play button
+            self.play_button.setEnabled(True)
+            
+            # Log success
+            self.log_to_console(f"Audio player initialized with file: {audio_path}")
+        except Exception as e:
+            self.log_to_console(f"Error initializing audio player: {str(e)}")
+            
+        # Make the audio container visible
+        self.audio_container.setVisible(True)
+        
+        # Return a reference to the player widget
+        return audio_player
+
     def toggle_playback(self):
-        """Toggle between play and pause states."""
+        """Toggle the playback state of the media player."""
         if self.media_player.state() == QMediaPlayer.PlayingState:
             self.media_player.pause()
         else:
             self.media_player.play()
-    
+
     def media_state_changed(self, state):
-        """Handle media state changes to update the play/pause button."""
+        """Handle media state changes."""
         if state == QMediaPlayer.PlayingState:
             self.play_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPause))
         else:
             self.play_button.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
-    
+
     def update_position(self, position):
-        """Update the slider position and time display."""
-        # Disable the signals to avoid a loop
-        self.position_slider.blockSignals(True)
-        self.position_slider.setValue(position)
-        self.position_slider.blockSignals(False)
+        """Update the slider position and time label as audio plays."""
+        # Avoid updating position if user is dragging the slider
+        if not self.position_slider.isSliderDown():
+            self.position_slider.setValue(position)
+            
+        # Format time strings
+        position_seconds = position // 1000
+        position_minutes = position_seconds // 60
+        position_seconds %= 60
         
-        # Update the time display
-        duration = self.media_player.duration()
-        if duration > 0:
-            current_time = self.format_time(position)
-            total_time = self.format_time(duration)
-            self.time_label.setText(f"{current_time} / {total_time}")
+        duration_seconds = self.media_player.duration() // 1000
+        duration_minutes = duration_seconds // 60
+        duration_seconds %= 60
+        
+        # Update time label
+        self.time_label.setText(f"{position_minutes:02d}:{position_seconds:02d} / "
+                               f"{duration_minutes:02d}:{duration_seconds:02d}")
     
     def update_duration(self, duration):
-        """Update the slider range when media duration changes."""
+        """Update the slider range when media duration is known."""
         self.position_slider.setRange(0, duration)
-        
-        # Update the time display
-        if duration > 0:
-            current_time = self.format_time(self.media_player.position())
-            total_time = self.format_time(duration)
-            self.time_label.setText(f"{current_time} / {total_time}")
     
     def set_position(self, position):
-        """Set the playback position."""
+        """Set the playback position when user moves the slider."""
         self.media_player.setPosition(position)
     
     def set_volume(self, volume):
-        """Set the audio volume."""
+        """Set the playback volume."""
         self.media_player.setVolume(volume)
-    
+
     def format_time(self, milliseconds):
-        """Format time in milliseconds to mm:ss format."""
-        seconds = int(milliseconds / 1000)
+        """Format time in milliseconds to a MM:SS string."""
+        seconds = milliseconds // 1000
         minutes = seconds // 60
         seconds %= 60
-        return f"{minutes}:{seconds:02d}"
+        return f"{minutes:02d}:{seconds:02d}"
     
     def add_subject(self):
         """Add a new subject."""
@@ -1349,6 +1423,7 @@ class MainWindow(QMainWindow):
                 transcript = None
                 error_occurred = False
                 error_message = ""
+                detected_language = None
                 
                 try:
                     # Check for cancellation before starting
@@ -1358,7 +1433,17 @@ class MainWindow(QMainWindow):
                         return
                     
                     # Perform transcription
-                    transcript = self.ai_processor.transcribe_audio(audio_path)
+                    result = self.ai_processor.transcribe_audio(audio_path)
+                    
+                    # Extract transcript and language
+                    if isinstance(result, dict):
+                        transcript = result.get("text", "")
+                        detected_language = result.get("language", "unknown")
+                        logging.info(f"Transcription language detected: {detected_language}")
+                    else:
+                        # Handle legacy format (string)
+                        transcript = result
+                        detected_language = "unknown"
                     
                     # Check for cancellation after transcription
                     if hasattr(self, 'transcription_cancelled') and self.transcription_cancelled:
@@ -1368,8 +1453,9 @@ class MainWindow(QMainWindow):
                     
                     # Update database if successful
                     if transcript:
-                        self.db.update_class(class_id, transcript=transcript)
-                        logging.info(f"Transcription succeeded, updating database for class ID {class_id}")
+                        # Store transcript and language
+                        self.db.update_class(class_id, transcript=transcript, language=detected_language)
+                        logging.info(f"Transcription succeeded, updating database for class ID {class_id} with language {detected_language}")
                     else:
                         error_occurred = True
                         error_message = "Transcription produced no result"
@@ -1378,8 +1464,8 @@ class MainWindow(QMainWindow):
                     error_message = str(e)
                     logging.error(f"Transcription error: {str(e)}", exc_info=True)
                 
-                # Emit signal with result
-                self.transcription_signals.finished.emit(transcript, class_id, error_occurred, error_message)
+                # Emit the signal to update UI - transcript and detected language 
+                self.transcription_signals.finished.emit(transcript or "", class_id, error_occurred, error_message)
             
             # Start worker thread
             self.transcription_thread = threading.Thread(target=transcription_worker, daemon=True)
@@ -1417,9 +1503,17 @@ class MainWindow(QMainWindow):
         
         # Handle errors
         if error_occurred:
-            self.log_to_console(f"Transcription failed: {error_message}")
-            QMessageBox.critical(self, "Transcription Error", 
-                              f"An error occurred during transcription: {error_message}")
+            # Log the error to console
+            error_msg = "Transcription failed: " + error_message
+            self.log_to_console(error_msg)
+            logging.info(error_msg)
+            
+            # Reset the whisper model to ensure clean state for next attempt
+            self.ai_processor.reset_whisper_model()
+            
+            # Show error message to the user
+            QMessageBox.warning(self, "Transcription Error", 
+                               f"Transcription failed. Please try again.\n\nError: {error_message}")
             return
         
         # Handle empty transcript
@@ -1487,110 +1581,108 @@ class MainWindow(QMainWindow):
                              "Audio has been successfully transcribed.")
 
     def summarize_transcript(self):
-        """Summarize the transcript using Ollama."""
+        """Summarize the transcript of the selected class."""
+        logging.info("Starting summarization")
+        
+        # Validate class selection
+        row = self.classes_list.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "Error", "Please select a class first.")
+            return
+        
+        # Get class ID
+        class_id = self.classes_list.item(row).data(Qt.UserRole)
+        selected_class = self.db.get_class(class_id)
+        
+        if not selected_class:
+            QMessageBox.warning(self, "Error", "Class not found in database.")
+            return
+            
+        # Check if we have a transcript to summarize
+        if not selected_class.get('transcript'):
+            QMessageBox.warning(self, "Error", 
+                               "No transcript available to summarize.\n\n"
+                               "Please transcribe the audio first.")
+            return
+            
+        # Get the transcript text
+        transcript_text = selected_class.get('transcript')
+        
+        # Get the language if available
+        language = selected_class.get('language', None)
+        logging.info(f"Using language '{language}' for summarization")
+        
+        # Update UI to show summarization is in progress
+        self.summarize_button.setText("Summarizing...")
+        self.summarize_button.setEnabled(False)
+        
+        # Show progress UI
+        self._show_progress(
+            active=True, 
+            message="Summarizing transcript...", 
+            process_type="summarization"
+        )
+        
+        # Set up signals for thread-safe communication
+        self.summarization_signals = SummarizationSignals()
+        self.summarization_signals.finished.connect(self._handle_summarization_result)
+        
+        # Reset cancellation flag
+        self.summarization_cancelled = False
+        
+        # Use a separate thread for the summarization process
+        summarization_thread = threading.Thread(
+            target=self._summarization_worker,
+            args=(transcript_text, class_id, language),
+            daemon=True
+        )
+        summarization_thread.start()
+        
+        # Store the thread reference for potential cancellation
+        self.current_process = summarization_thread
+    
+    def _summarization_worker(self, text, class_id, language=None):
+        """Worker function for summarization in a separate thread."""
+        summary = None
+        error_occurred = False
+        error_message = ""
+        
         try:
-            # Safety check 1: Make sure a class is selected
-            row = self.classes_list.currentRow()
-            if row < 0:
-                QMessageBox.warning(self, "Error", "Please select a class first.")
+            # Check for cancellation before starting
+            if hasattr(self, 'summarization_cancelled') and self.summarization_cancelled:
+                logging.info("Summarization was cancelled before it started")
+                self.summarization_signals.finished.emit("", class_id, True, "Cancelled by user")
                 return
             
-            # Safety check 2: Get class ID properly
-            if not self.classes_list.item(row) or not self.classes_list.item(row).data(Qt.UserRole):
-                QMessageBox.warning(self, "Error", "Invalid class selection. Please try selecting the class again.")
+            # Log start time
+            start_time = time.time()
+            
+            # Perform summarization with detected language
+            summary = self.ai_processor.summarize_text(text, language=language)
+            
+            # Check for cancellation after summarization
+            if hasattr(self, 'summarization_cancelled') and self.summarization_cancelled:
+                logging.info("Summarization was cancelled after completion")
+                self.summarization_signals.finished.emit("", class_id, True, "Cancelled by user")
                 return
             
-            class_id = self.classes_list.item(row).data(Qt.UserRole)
+            # Log completion time
+            elapsed_time = time.time() - start_time
+            logging.info(f"Summarization completed in {elapsed_time:.2f} seconds")
             
-            # Get class data
-            class_data = self.db.get_class(class_id)
-            if not class_data:
-                QMessageBox.warning(self, "Error", "Could not find the selected class in the database.")
-                return
-            
-            # Check if transcript exists
-            if not class_data.get('transcript'):
-                QMessageBox.warning(self, "Error", "No transcript found for this class.")
-                return
-            
-            # Store transcript text for processing
-            transcript_text = class_data['transcript']
-            
-            # Update UI state
-            self.summarize_button.setText("Summarizing...")
-            self.summarize_button.setEnabled(False)
-            
-            # Show the integrated progress UI 
-            self._show_progress(
-                active=True, 
-                message="Generating summary from transcript...",
-                process_type="summarization"
-            )
-            
-            # Reset cancellation flag
-            self.summarization_cancelled = False
-            
-            # Set up signals for thread-safe communication
-            self.summarization_signals = SummarizationSignals()
-            self.summarization_signals.finished.connect(self._handle_summarization_result)
-            
-            # Summarization worker thread
-            def summarization_worker():
-                summary = None
-                error_occurred = False
-                error_message = ""
-                
-                try:
-                    # Check for cancellation before starting
-                    if hasattr(self, 'summarization_cancelled') and self.summarization_cancelled:
-                        logging.info("Summarization was cancelled before it started")
-                        self.summarization_signals.finished.emit("", class_id, True, "Cancelled by user")
-                        return
-                    
-                    # Log start time
-                    start_time = time.time()
-                    
-                    # Perform summarization
-                    summary = self.ai_processor.summarize_text(transcript_text)
-                    
-                    # Check for cancellation after summarization
-                    if hasattr(self, 'summarization_cancelled') and self.summarization_cancelled:
-                        logging.info("Summarization was cancelled after completion")
-                        self.summarization_signals.finished.emit("", class_id, True, "Cancelled by user")
-                        return
-                    
-                    # Log completion time
-                    elapsed_time = time.time() - start_time
-                    logging.info(f"Summarization completed in {elapsed_time:.2f} seconds")
-                    
-                    # Update database if successful
-                    if summary:
-                        self.db.update_class(class_id, summary=summary)
-                    else:
-                        error_occurred = True
-                        error_message = "Summarization produced no result"
-                except Exception as e:
-                    error_occurred = True
-                    error_message = str(e)
-                    logging.error(f"Summarization error: {str(e)}", exc_info=True)
-                
-                # Emit signal with result
-                self.summarization_signals.finished.emit(summary, class_id, error_occurred, error_message)
-            
-            # Start worker thread
-            self.summarization_thread = threading.Thread(target=summarization_worker, daemon=True)
-            self.summarization_thread.start()
-            
+            # Update database if successful
+            if summary:
+                self.db.update_class(class_id, summary=summary)
+            else:
+                error_occurred = True
+                error_message = "Summarization produced no result"
         except Exception as e:
-            # Global error handler
-            error_msg = f"Error starting summarization: {str(e)}"
-            logging.error(error_msg, exc_info=True)
-            QMessageBox.critical(self, "Error", error_msg)
-            
-            # Reset UI state
-            self.summarize_button.setText("Summarize")
-            self.summarize_button.setEnabled(True)
-            self._show_progress(active=False, process_type="summarization")
+            error_occurred = True
+            error_message = str(e)
+            logging.error(f"Summarization error: {str(e)}", exc_info=True)
+        
+        # Emit signal with result
+        self.summarization_signals.finished.emit(summary, class_id, error_occurred, error_message)
     
     def _handle_summarization_result(self, summary, class_id, error_occurred, error_message):
         """Handle the result of summarization (called on main thread via signal)"""
@@ -1609,9 +1701,14 @@ class MainWindow(QMainWindow):
         
         # Handle errors
         if error_occurred:
-            self.log_to_console(f"Summarization failed: {error_message}")
-            QMessageBox.critical(self, "Summarization Error", 
-                              f"An error occurred during summarization: {error_message}")
+            # Log the error to console
+            error_msg = "Summarization failed: " + error_message
+            self.log_to_console(error_msg)
+            logging.info(error_msg)
+            
+            # Show error message to the user
+            QMessageBox.warning(self, "Summarization Error", 
+                               f"Summarization failed. Please try again.\n\nError: {error_message}")
             return
         
         # Handle empty summary
@@ -1687,22 +1784,114 @@ class MainWindow(QMainWindow):
         if not text:
             return ""
         
+        # Get font size settings from database
+        settings = self.db.get_settings()
+        title_font_size = settings.get('title_font_size', 30)
+        heading_font_size = settings.get('heading_font_size', 18)
+        text_font_size = settings.get('text_font_size', 12)
+        
+        # Process text line by line to handle headings and lists properly
+        lines = text.split('\n')
+        processed_lines = []
+        
+        in_list = False
+        list_indent_level = 0
+        
+        for line in lines:
+            # Handle headings (# Heading 1, ## Heading 2, ### Heading 3)
+            if re.match(r'^#{1,6}\s', line):
+                # Count the number of # symbols to determine heading level
+                level = len(re.match(r'^(#+)', line).group(1))
+                heading_text = line.lstrip('#').strip()
+                
+                # Calculate font size based on heading level
+                if level == 1:
+                    # Main title
+                    font_size = title_font_size
+                else:
+                    # Section headings with decreasing size based on level
+                    font_size = max(heading_font_size - ((level - 2) * 2), text_font_size)
+                
+                processed_line = f'<div style="font-size:{font_size}px; font-weight:bold; margin-top:10px; margin-bottom:5px;">{heading_text}</div>'
+                in_list = False  # Reset list state when encountering a heading
+            
+            # Handle bullet points
+            elif line.strip().startswith('- ') or line.strip().startswith('* '):
+                # Calculate indentation level based on leading spaces
+                indent_spaces = len(line) - len(line.lstrip())
+                indent_level = indent_spaces // 2
+                
+                # Extract the content after the bullet marker
+                content = line.strip()[2:].strip()
+                
+                # Create appropriate indentation
+                if indent_level > 0:
+                    margin_left = 20 + (indent_level * 20)
+                else:
+                    margin_left = 20
+                
+                processed_line = f'<div style="font-size:{text_font_size}px; margin-left:{margin_left}px; margin-bottom:3px; text-indent:-12px;">• {content}</div>'
+                in_list = True
+                list_indent_level = indent_level
+            
+            # Handle numbered lists
+            elif re.match(r'^\s*\d+\.\s', line):
+                # Calculate indentation level based on leading spaces
+                indent_spaces = len(line) - len(line.lstrip())
+                indent_level = indent_spaces // 2
+                
+                # Extract the number and content
+                match = re.match(r'^\s*(\d+)\.\s+(.*)', line)
+                if match:
+                    number = match.group(1)
+                    content = match.group(2)
+                    
+                    # Create appropriate indentation
+                    margin_left = 20 + (indent_level * 20)
+                    processed_line = f'<div style="font-size:{text_font_size}px; margin-left:{margin_left}px; margin-bottom:3px; text-indent:-15px;">{number}. {content}</div>'
+                    in_list = True
+                    list_indent_level = indent_level
+                else:
+                    processed_line = line
+            
+            # Handle empty lines
+            elif not line.strip():
+                processed_line = '<div style="height:10px;"></div>'  # Add some vertical spacing
+                in_list = False  # Reset list state on empty line
+            
+            # Regular paragraph text
+            else:
+                # Check if this is a continuation of a list item
+                if in_list and line.strip() and len(line) - len(line.lstrip()) >= list_indent_level * 2:
+                    # This is continuation text for a list item, indent it
+                    indent_spaces = len(line) - len(line.lstrip())
+                    indent_level = max(indent_spaces // 2, list_indent_level)
+                    margin_left = 20 + (indent_level * 20)
+                    processed_line = f'<div style="font-size:{text_font_size}px; margin-left:{margin_left + 15}px; margin-bottom:3px;">{line.strip()}</div>'
+                else:
+                    # Regular paragraph
+                    processed_line = f'<div style="font-size:{text_font_size}px; margin-bottom:5px;">{line}</div>'
+                    in_list = False
+            
+            processed_lines.append(processed_line)
+        
+        # Join all processed lines
+        html = ''.join(processed_lines)
+        
+        # Process inline formatting
         # Replace **text** with <b>text</b> for bold
-        text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+        html = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html)
         
         # Replace *text* with <i>text</i> for italic
-        text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
+        html = re.sub(r'\*(.*?)\*', r'<i>\1</i>', html)
         
         # Replace `text` with <code>text</code> for inline code
-        text = re.sub(r'`(.*?)`', r'<code>\1</code>', text)
+        html = re.sub(r'`(.*?)`', r'<code style="background-color:#f0f0f0; padding:2px; border-radius:3px;">\1</code>', html)
         
         # Replace ~~text~~ with <s>text</s> for strikethrough
-        text = re.sub(r'~~(.*?)~~', r'<s>\1</s>', text)
+        html = re.sub(r'~~(.*?)~~', r'<s>\1</s>', html)
         
-        # Replace newlines with <br> tags
-        text = text.replace('\n', '<br>')
-        
-        return text
+        return html
     
     def check_ollama(self):
         """Check if Ollama is available and the required model is installed."""

@@ -12,7 +12,7 @@ import torch
 class AIProcessor:
     """Handles AI processing tasks like transcription and summarization."""
     
-    def __init__(self, ollama_host="http://localhost:11434", model_name="mistral:latest", whisper_model_size="base", summarization_preset="Reserved & concise"):
+    def __init__(self, ollama_host="http://localhost:11434", model_name="mistral:latest", whisper_model_size="medium", summarization_preset="Reserved & concise"):
         """Initialize the AI processor with Ollama settings."""
         self.ollama_host = ollama_host
         self.model_name = model_name
@@ -23,87 +23,86 @@ class AIProcessor:
         self.safe_mode = False  # Safe mode flag for transcription
     
     def _load_whisper_model(self, model_size=None):
-        """Load the Whisper model for transcription.
-        
-        Args:
-            model_size: Size of the model to load ("tiny", "base", "small", "medium", "large").
-                        If None, uses the size from settings.
-        """
-        if self.whisper_model is None:
-            # Use the provided model_size or fall back to the instance variable
-            if model_size is None:
-                model_size = self.whisper_model_size
+        """Load the Whisper model."""
+        try:
+            # Use provided size or instance default
+            size = model_size or self.whisper_model_size
             
-            print(f"Loading Whisper model: {model_size}")
-            logging.info(f"Loading Whisper model: {model_size}")
+            # Log the load attempt
+            logging.info(f"Loading Whisper model with size: {size}")
             
-            # Determine device
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            print(f"Using device: {device}")
-            logging.info(f"Using device: {device}")
-            
-            # For GPU, check if we have enough VRAM for the selected model
-            if device == "cuda":
-                gpu_memory_mb = torch.cuda.get_device_properties(0).total_memory / (1024**2)
-                required_memory = {
-                    "tiny": 1024,      # ~1 GB
-                    "base": 1536,      # ~1.5 GB
-                    "small": 2560,     # ~2.5 GB
-                    "medium": 4608,    # ~4.5 GB
-                    "large": 9216      # ~9 GB
-                }
+            # Check CUDA availability
+            use_gpu = torch.cuda.is_available()
+            if use_gpu:
+                logging.info("CUDA is available, using GPU")
+                device = "cuda"
                 
-                # Check if we have enough memory for the requested model
-                if gpu_memory_mb < required_memory.get(model_size, 1536):
-                    # If not enough memory, downgrade to a smaller model
-                    if model_size == "large" and gpu_memory_mb >= required_memory["medium"]:
-                        print(f"Insufficient GPU memory for 'large' model, downgrading to 'medium'")
-                        model_size = "medium"
-                    elif model_size in ["large", "medium"] and gpu_memory_mb >= required_memory["small"]:
-                        print(f"Insufficient GPU memory for '{model_size}' model, downgrading to 'small'")
-                        model_size = "small"
-                    elif model_size in ["large", "medium", "small"] and gpu_memory_mb >= required_memory["base"]:
-                        print(f"Insufficient GPU memory for '{model_size}' model, downgrading to 'base'")
-                        model_size = "base"
-                    elif gpu_memory_mb >= required_memory["tiny"]:
-                        print(f"Limited GPU memory, using 'tiny' model")
-                        model_size = "tiny"
-                    else:
-                        print(f"Very limited GPU memory, falling back to CPU")
-                        device = "cpu"
+                # Log GPU information if available
+                try:
+                    gpu_name = torch.cuda.get_device_name(0)
+                    logging.info(f"Using GPU: {gpu_name}")
+                    
+                    gpu_memory_mb = torch.cuda.get_device_properties(0).total_memory / (1024**2)
+                    gpu_allocated_mb = torch.cuda.memory_allocated(0) / (1024**2)
+                    
+                    logging.info(f"GPU total memory: {gpu_memory_mb:.2f} MB")
+                    logging.info(f"GPU allocated memory: {gpu_allocated_mb:.2f} MB")
+                    
+                    # Check if we have enough memory for the selected model
+                    required_memory = {
+                        "tiny": 1024,      # ~1 GB
+                        "base": 1536,      # ~1.5 GB
+                        "small": 2560,     # ~2.5 GB
+                        "medium": 4608,    # ~4.5 GB
+                        "large": 9216      # ~9 GB
+                    }
+                    
+                    # Warning if low memory, but don't auto-downgrade unless necessary
+                    if gpu_memory_mb < required_memory.get(size, 2000):
+                        logging.warning(f"GPU memory may be insufficient for {size} model. Consider using a smaller model.")
+                except Exception as e:
+                    logging.warning(f"Could not get detailed GPU info: {str(e)}")
+            else:
+                logging.info("CUDA is not available, using CPU")
+                device = "cpu"
+                # If using CPU, warn for larger models
+                if size not in ["tiny", "base"] and not model_size:
+                    logging.warning("CPU detected but using a large model. This may be slow.")
+                    logging.warning("Consider setting whisper_model_size to 'base' or 'tiny' for faster processing.")
             
-            try:
-                # Load the model with appropriate device
-                self.whisper_model = whisper.load_model(model_size, device=device)
-                print(f"Model loaded successfully on: {self.whisper_model.device}")
-                logging.info(f"Model loaded successfully on: {self.whisper_model.device}")
-            except Exception as e:
-                print(f"Error loading model '{model_size}' on {device}: {e}")
-                logging.error(f"Error loading model '{model_size}' on {device}: {e}", exc_info=True)
-                
-                # If failed and not already using tiny model on CPU, try fallback
-                if model_size != "tiny" or device != "cpu":
-                    print("Attempting fallback to tiny model on CPU...")
-                    try:
-                        self.whisper_model = whisper.load_model("tiny", device="cpu")
-                        print(f"Fallback successful, model loaded on: {self.whisper_model.device}")
-                        logging.info(f"Fallback successful, model loaded on: {self.whisper_model.device}")
-                    except Exception as fallback_error:
-                        print(f"Fallback failed: {fallback_error}")
-                        logging.error(f"Fallback failed: {fallback_error}", exc_info=True)
-                        raise
-                else:
-                    # No fallback possible
-                    raise
-        
-        return self.whisper_model
+            # Load the model (may take time for larger models)
+            model = whisper.load_model(size, device=device)
+            logging.info(f"Successfully loaded model on device: {model.device}")
+            return model
+            
+        except Exception as e:
+            logging.error(f"Error loading Whisper model: {str(e)}", exc_info=True)
+            
+            # If failed and not already trying tiny+CPU, attempt fallback
+            if size != "tiny" or device != "cpu":
+                logging.warning("Attempting fallback to tiny model on CPU")
+                try:
+                    return whisper.load_model("tiny", device="cpu")
+                except Exception as fallback_e:
+                    logging.error(f"Fallback model loading also failed: {str(fallback_e)}")
+            
+            # Re-raise the original exception
+            raise
     
     def set_progress_callback(self, callback):
         """Set a callback function for progress updates."""
         self.progress_callback = callback
     
-    def transcribe_audio(self, audio_file_path):
-        """Transcribe the audio file using Whisper."""
+    def transcribe_audio(self, audio_file_path, retry_with_fallback=True):
+        """Transcribe the provided audio file.
+        
+        Args:
+            audio_file_path: Path to the audio file to transcribe
+            retry_with_fallback: Whether to retry with fallback method if transcription fails
+            
+        Returns:
+            Dictionary containing transcription text and detected language
+        """
         try:
             # Check if audio file exists
             if not os.path.exists(audio_file_path):
@@ -228,148 +227,157 @@ class AIProcessor:
             logging.info(f"Starting transcription of {audio_file_path}")
             start_time = time.time()
             
-            # Create transcription options with appropriate settings
-            fp16 = torch.cuda.is_available()  # Use fp16 only on GPU
+            # Check if model is loaded, if not, load it
+            if self.whisper_model is None:
+                whisper_model = self._load_whisper_model()
+                self.whisper_model = whisper_model
+            else:
+                whisper_model = self.whisper_model
+                
+            # Log model information
+            if hasattr(whisper_model, 'device'):
+                logging.info(f"Using Whisper model: {self.whisper_model_size} on {whisper_model.device}")
+            
+            # Set transcription options
             options = {
-                "fp16": fp16,
-                "language": "en"  # You can adjust or make this configurable
+                "language": None,  # Allow automatic language detection
+                "task": "transcribe",
+                "verbose": True,
+                "word_timestamps": False,  # Word timestamps can be very slow
+                "patience": 2,
+                "beam_size": 5,
+                "best_of": 5,
+                "initial_prompt": "Bonjour, comment allez-vous? Je m'appelle Claude. J'espère que vous allez bien aujourd'hui. Veuillez transcrire avec la ponctuation et les majuscules appropriées.",
+                "fp16": torch.cuda.is_available(),
+                "without_timestamps": True,  # Don't include timestamps in output
+                "hallucination_silence_threshold": None,
+                "temperature": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                "condition_on_previous_text": True,
+                # Add important punctuation options
+                "no_speech_threshold": 0.6,
+                "compression_ratio_threshold": 2.4,
+                "logprob_threshold": -1.0,
+                # Force punctuation and capitalization for all languages
+                "suppress_tokens": [],  # Don't suppress any tokens
             }
             
-            # Transcribe the audio with progress callback if available
-            try:
-                # Set a timeout for the operation (not directly supported by Whisper,
-                # but we can monitor the operation from another thread if needed)
-                result = model.transcribe(audio_file_path, **options)
-            except torch.cuda.OutOfMemoryError:
-                # If we run out of GPU memory, try to recover by moving to CPU
-                print("GPU out of memory, attempting to continue on CPU...")
-                logging.warning("GPU out of memory, attempting to continue on CPU...")
-                torch.cuda.empty_cache()  # Free up GPU memory
-                
-                # Recreate the model on CPU
-                self.whisper_model = None  # Force reload
-                self.whisper_model = whisper.load_model("base", device="cpu")
-                print(f"Reloaded model on CPU: {self.whisper_model.device}")
-                logging.info(f"Reloaded model on CPU: {self.whisper_model.device}")
-                
-                # Try again on CPU
-                options["fp16"] = False  # Disable fp16 on CPU
-                result = self.whisper_model.transcribe(audio_file_path, **options)
+            # Perform transcription
+            logging.info(f"Starting transcription with options: {options}")
+            transcription_result = whisper_model.transcribe(audio_file_path, **options)
+            
+            # Extract transcript text
+            transcript = transcription_result.get('text', '')
+            
+            # Log identified language
+            detected_language = transcription_result.get('language')
+            logging.info(f"Whisper detected language: {detected_language}")
+            
+            # Process the transcript
+            transcript = transcript.strip()
             
             # Log end of transcription
             elapsed_time = time.time() - start_time
-            print(f"Transcription completed in {elapsed_time:.2f} seconds")
             logging.info(f"Transcription completed in {elapsed_time:.2f} seconds")
             
-            # Return the transcription text
-            return result["text"]
+            # Return the transcription text and detected language
+            return {
+                "text": transcript,
+                "language": detected_language
+            }
         except Exception as e:
             import traceback
-            error_msg = f"Transcription error: {str(e)}\n{traceback.format_exc()}"
-            print(error_msg)
-            logging.error(f"Transcription error: {str(e)}", exc_info=True)
+            error_msg = f"Error in transcription: {str(e)}\n{traceback.format_exc()}"
+            logging.error(error_msg)
             
-            # When an error occurs, enable safe mode for future transcriptions
-            self.safe_mode = True
-            print("Safe mode enabled for future transcriptions")
-            logging.info("Safe mode enabled for future transcriptions")
-            
-            # Try the fallback method instead
+            # Try to clear GPU memory if possible
             try:
-                print("Attempting fallback transcription method...")
-                logging.info("Attempting fallback transcription method...")
-                return self._fallback_transcribe(audio_file_path)
-            except Exception as fallback_error:
-                fallback_error_msg = f"Fallback transcription error: {str(fallback_error)}"
-                print(fallback_error_msg)
-                logging.error(f"Fallback transcription error: {str(fallback_error)}", exc_info=True)
-                raise Exception(f"All transcription methods failed: {str(e)} and then {str(fallback_error)}")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    logging.info("Cleared GPU cache")
+            except:
+                pass
+                
+            # Enable safe mode for future transcriptions if this failed
+            self.safe_mode = True
+            
+            if retry_with_fallback:
+                # Try the fallback method
+                logging.info("Attempting fallback transcription method")
+                return self._fallback_transcribe(audio_file_path, custom_error=str(e))
+            else:
+                # Re-raise the exception
+                raise
         finally:
             # Cleanup to help prevent memory leaks
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                print("Cleared GPU cache")
+            try:
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    logging.info("Cleared GPU cache")
+            except:
+                pass
     
     def _fallback_transcribe(self, audio_file_path, custom_error=None):
-        """Fallback transcription method using simpler approach.
-        
-        This method is used when the Whisper model fails to load or transcribe.
-        It should NEVER crash the application.
-        """
-        print("Using fallback transcription method...")
-        logging.info("Using fallback transcription method...")
-        
-        # If we have a custom error (like missing ffmpeg), use it as the base message
-        if custom_error:
-            fallback_message = custom_error
-        else:
-            fallback_message = (
-                "Automated transcription is currently unavailable. "
-                "The system encountered an issue while processing your audio file. "
-                "\n\nPlease try again later or use an external transcription service."
-            )
-        
+        """Fallback method for transcription when the primary method fails."""
         try:
-            # First verify the audio file exists
-            if not os.path.exists(audio_file_path):
-                return f"{fallback_message}\n\nError: Audio file not found: {os.path.basename(audio_file_path)}"
+            logging.info("Using fallback transcription method")
             
-            # Check for Ollama availability - fast path to avoid hanging
-            try:
-                # Use a very short timeout for quick check
-                response = requests.get(f"{self.ollama_host}/api/tags", timeout=2)
-                if response.status_code != 200:
-                    return f"{fallback_message}\n\nError: Ollama server returned status code {response.status_code}.\n\nPlease ensure Ollama is running."
-            except requests.exceptions.RequestException as e:
-                # Any connection error - timeout, connection refused, etc.
-                logging.error(f"Could not connect to Ollama service: {str(e)}")
-                return f"{fallback_message}\n\nError: Could not connect to Ollama service at {self.ollama_host}.\n\nPlease ensure Ollama is installed and running."
-            
-            # Just use Ollama as a fallback
-            print("Using Ollama for transcription message...")
-            
-            # First check if Ollama is available and has the requested model
-            model_available, model_status = self.check_ollama_model()
-            if not model_available:
-                # If model not available, return clear error message
-                error_msg = f"{fallback_message}\n\nModel Error: {model_status}\n\nPlease check the Settings menu to select an available model."
-                logging.warning(f"Ollama model unavailable: {model_status}")
-                return error_msg
-            
-            # Create a simple prompt for Ollama
-            system_prompt = (
-                "You are an expert transcription assistant. Due to technical limitations, "
-                "automated transcription is not available right now."
-            )
-            
-            user_prompt = (
-                f"I was trying to transcribe an audio file '{os.path.basename(audio_file_path)}' "
-                f"but automated transcription is not working. Please provide a helpful message explaining "
-                f"that I should try again later or use a different transcription service."
-            )
-            
-            # Generate a message using Ollama with timeout handling
-            try:
-                # Try to connect to Ollama with a timeout
-                result = self._generate_with_ollama(user_prompt, system=system_prompt)
-                
-                if result and not result.startswith("Error:"):
-                    # If successful, return the Ollama-generated message
-                    return f"{fallback_message}\n\n{result}"
-                else:
-                    # If Ollama fails, log the error and return the default message
-                    logging.warning(f"Ollama failed to generate message: {result}")
-                    return f"{fallback_message}\n\nAdditional error: {result}\n\nPlease check that Ollama is running and a valid model is selected."
+            # First try using the existing model with simpler options
+            if self.whisper_model is not None:
+                try:
+                    logging.info("Attempting fallback with existing model using simplified options")
+                    # Use very minimal options to avoid errors
+                    simple_options = {
+                        "language": None,  # Auto-detect language
+                        "fp16": torch.cuda.is_available(),  # Use GPU if available
+                        "task": "transcribe"
+                    }
+                    result = self.whisper_model.transcribe(audio_file_path, **simple_options)
+                    transcript = result.get("text", "").strip()
+                    detected_language = result.get("language", "unknown")
                     
-            except Exception as ollama_error:
-                # If Ollama fails entirely, log and return the default message
-                logging.error(f"Could not connect to Ollama: {str(ollama_error)}", exc_info=True)
-                return f"{fallback_message}\n\nAdditional info: Could not connect to Ollama service."
-                
+                    logging.info(f"Fallback transcription completed with existing model. Language: {detected_language}")
+                    return {
+                        "text": transcript,
+                        "language": detected_language
+                    }
+                except Exception as e:
+                    logging.warning(f"Fallback with existing model failed: {str(e)}")
+                    # Continue to next fallback approach
+            
+            # If that fails, load the tiny model on CPU as last resort
+            try:
+                model = whisper.load_model("tiny", device="cpu")
+                logging.info("Loaded tiny model on CPU for fallback transcription")
+            except Exception as e:
+                logging.error(f"Failed to load tiny model: {str(e)}")
+                return {
+                    "text": f"Transcription failed: {custom_error or 'All transcription methods failed'}",
+                    "language": "unknown"
+                }
+            
+            # Use minimal options for stability
+            options = {
+                "language": None,  # Auto-detect language
+                "fp16": False,     # Disable fp16 for CPU
+                "task": "transcribe"
+            }
+            
+            # Perform transcription
+            result = model.transcribe(audio_file_path, **options)
+            transcript = result.get("text", "").strip()
+            detected_language = result.get("language", "unknown")
+            
+            logging.info(f"Fallback transcription completed with tiny CPU model. Language: {detected_language}")
+            return {
+                "text": transcript,
+                "language": detected_language
+            }
         except Exception as e:
-            # Catch-all for any other errors
-            logging.error(f"Fallback transcription failed: {str(e)}", exc_info=True)
-            return f"{fallback_message}\n\nPlease check application logs for details."
+            logging.error(f"Fallback transcription error: {str(e)}", exc_info=True)
+            return {
+                "text": f"Transcription failed: {str(e)}",
+                "language": "unknown"
+            }
     
     def _generate_with_ollama(self, prompt, system=None, max_tokens=2000, temperature=0.7):
         """Generate text using the Ollama API."""
@@ -407,8 +415,28 @@ class AIProcessor:
             print(f"Exception: {e}")
             return f"Error: {e}"
     
-    def summarize_text(self, text, num_sentences=10):
-        """Summarize the transcribed text based on the selected preset."""
+    def summarize_text(self, text, num_sentences=10, language=None):
+        """Summarize the provided text using LLM.
+        
+        Args:
+            text: The text to summarize
+            num_sentences: Target number of sentences in the summary
+            language: The language code of the text (e.g., 'fr', 'en'), or None for auto-detection
+            
+        Returns:
+            A string containing the summary
+        """
+        if not text or len(text.strip()) < 50:
+            return "Text too short to summarize"
+        
+        # Detect language if not provided
+        if language:
+            detected_language = language
+            logging.info(f"Using provided language: {language}")
+        else:
+            detected_language = self._detect_language(text)
+            logging.info(f"Auto-detected language: {detected_language}")
+        
         # Determine settings based on preset
         temperature = 0.7  # Default
         max_length = 2000  # Default
@@ -418,73 +446,188 @@ class AIProcessor:
         system_prompt = ""
         user_prompt = ""
         
+        # Define format instructions based on language
+        format_instructions_en = (
+            "Format your summary with the following structure:\n"
+            "1. Start with a bold main title (use ** for bold)\n"
+            "2. Create main sections with ## (second-level headings)\n"
+            "3. Use ### for subsections if needed\n"
+            "4. Use bullet points (- ) for individual items\n"
+            "5. Use indented bullet points for examples under concepts\n"
+            "6. Use **bold** for key terms and *italics* for emphasis\n"
+            "7. Keep the summary well-structured and visually organized\n\n"
+            "You have freedom to reorganize concepts in a logical way rather than strictly chronological, "
+            "if it helps comprehension and readability."
+        )
+        
+        format_instructions_fr = (
+            "Formatez votre résumé avec la structure suivante:\n"
+            "1. Commencez par un titre principal en gras (utilisez ** pour le gras)\n"
+            "2. Créez des sections principales avec ## (titres de deuxième niveau)\n"
+            "3. Utilisez ### pour les sous-sections si nécessaire\n"
+            "4. Utilisez des puces (- ) pour les éléments individuels\n"
+            "5. Utilisez des puces indentées pour les exemples sous les concepts\n"
+            "6. Utilisez **gras** pour les termes clés et *italique* pour l'emphase\n"
+            "7. Gardez le résumé bien structuré et visuellement organisé\n\n"
+            "Vous avez la liberté de réorganiser les concepts de manière logique plutôt que strictement chronologique, "
+            "si cela aide à la compréhension et à la lisibilité."
+        )
+        
+        # Select appropriate format instructions
+        format_instructions = format_instructions_fr if detected_language == "fr" else format_instructions_en
+        
         if preset == "Reserved & concise":
             temperature = 0.3
             max_length = 1500
-            system_prompt = (
-                "You are an educational assistant that creates concise, accurate summaries of class lectures. "
-                "Focus only on information explicitly mentioned in the transcript. "
-                "Do not add information, examples, or context beyond what was directly stated. "
-                "Create a clear but brief summary using bullet points."
-            )
-            user_prompt = (
-                f"Create a concise summary of this class transcript using 5-8 bullet points. "
-                f"Include only information that was explicitly mentioned. "
-                f"Do not add any information that wasn't directly stated in the transcript.\n\n"
-                f"TRANSCRIPT:\n{text}"
-            )
+            if detected_language == "fr":
+                system_prompt = (
+                    "Vous êtes un assistant éducatif qui crée des résumés concis et précis de cours. "
+                    "Concentrez-vous uniquement sur les informations explicitement mentionnées dans la transcription. "
+                    "N'ajoutez pas d'informations, d'exemples ou de contextes qui n'ont pas été directement énoncés. "
+                    "Créez un résumé clair mais bref en utilisant des puces. "
+                    "Votre réponse DOIT être en français."
+                )
+                user_prompt = (
+                    f"Créez un résumé concis de cette transcription de cours. "
+                    f"Incluez uniquement les informations qui ont été explicitement mentionnées. "
+                    f"N'ajoutez aucune information qui n'a pas été directement énoncée dans la transcription.\n\n"
+                    f"{format_instructions}\n\n"
+                    f"TRANSCRIPT:\n{text}\n\n"
+                    f"IMPORTANT: Votre résumé DOIT être en français, dans la même langue que la transcription."
+                )
+            else:
+                system_prompt = (
+                    "You are an educational assistant that creates concise, accurate summaries of class lectures. "
+                    "Focus only on information explicitly mentioned in the transcript. "
+                    "Do not add information, examples, or context beyond what was directly stated. "
+                    "Create a clear but brief summary using bullet points. "
+                    "Your response MUST be in English or the same language as the transcript."
+                )
+                user_prompt = (
+                    f"Create a concise summary of this class transcript. "
+                    f"Include only information that was explicitly mentioned. "
+                    f"Do not add any information that wasn't directly stated in the transcript.\n\n"
+                    f"{format_instructions}\n\n"
+                    f"TRANSCRIPT:\n{text}\n\n"
+                    f"IMPORTANT: Your summary MUST be in the same language as the transcript (detected: {detected_language})."
+                )
             
         elif preset == "Reserved & developed":
             temperature = 0.4
             max_length = 3000
-            system_prompt = (
-                "You are an educational assistant that creates detailed, comprehensive summaries of class lectures. "
-                "Focus only on information explicitly mentioned in the transcript. "
-                "Organize information clearly with headings and detailed bullet points, but do not add information "
-                "or examples beyond what was stated in the transcript."
-            )
-            user_prompt = (
-                f"Create a detailed summary of this class transcript using headings and bullet points. "
-                f"Aim for 10-15 bullet points with detailed information. "
-                f"Focus only on information explicitly mentioned in the transcript. "
-                f"Do not add any new information, examples, or context beyond what was directly stated.\n\n"
-                f"TRANSCRIPT:\n{text}"
-            )
+            if detected_language == "fr":
+                system_prompt = (
+                    "Vous êtes un assistant éducatif qui crée des résumés détaillés et complets des cours. "
+                    "Concentrez-vous uniquement sur les informations explicitement mentionnées dans la transcription. "
+                    "Organisez les informations clairement avec des titres et des puces détaillées, mais n'ajoutez pas "
+                    "d'informations ou d'exemples au-delà de ce qui a été énoncé dans la transcription. "
+                    "Votre réponse DOIT être en français."
+                )
+                user_prompt = (
+                    f"Créez un résumé détaillé de cette transcription de cours. "
+                    f"Visez 10-15 puces avec des informations détaillées. "
+                    f"Concentrez-vous uniquement sur les informations explicitement mentionnées dans la transcription. "
+                    f"N'ajoutez aucune nouvelle information, exemples ou contexte au-delà de ce qui a été directement énoncé.\n\n"
+                    f"{format_instructions}\n\n"
+                    f"TRANSCRIPTION:\n{text}\n\n"
+                    f"IMPORTANT: Votre résumé DOIT être en français, dans la même langue que la transcription."
+                )
+            else:
+                system_prompt = (
+                    "You are an educational assistant that creates detailed, comprehensive summaries of class lectures. "
+                    "Focus only on information explicitly mentioned in the transcript. "
+                    "Organize information clearly with headings and detailed bullet points, but do not add information "
+                    "or examples beyond what was stated in the transcript. "
+                    "Your response MUST be in English or the same language as the transcript."
+                )
+                user_prompt = (
+                    f"Create a detailed summary of this class transcript. "
+                    f"Aim for 10-15 bullet points with detailed information. "
+                    f"Focus only on information explicitly mentioned in the transcript. "
+                    f"Do not add any new information, examples, or context beyond what was directly stated.\n\n"
+                    f"{format_instructions}\n\n"
+                    f"TRANSCRIPT:\n{text}\n\n"
+                    f"IMPORTANT: Your summary MUST be in the same language as the transcript (detected: {detected_language})."
+                )
             
         elif preset == "Outspoken & concise":
             temperature = 0.7
             max_length = 1500
-            system_prompt = (
-                "You are an expert educational assistant that creates concise, insightful summaries of class lectures. "
-                "Feel free to supplement the transcript content with relevant background information and context "
-                "to enhance understanding of key concepts. "
-                "Create a clear, concise summary with key points."
-            )
-            user_prompt = (
-                f"Create a concise but insightful summary of this class transcript using 5-8 key points. "
-                f"While focusing primarily on the transcript content, you may add relevant context "
-                f"or clarify concepts that would help understanding. "
-                f"Keep the summary concise but make sure it's valuable and insightful.\n\n"
-                f"TRANSCRIPT:\n{text}"
-            )
+            if detected_language == "fr":
+                system_prompt = (
+                    "Vous êtes un assistant éducatif expert qui crée des résumés concis et perspicaces des cours. "
+                    "N'hésitez pas à compléter le contenu de la transcription avec des informations contextuelles "
+                    "pertinentes pour améliorer la compréhension des concepts clés. "
+                    "Créez un résumé clair et concis avec les points clés. "
+                    "Votre réponse DOIT être en français."
+                )
+                user_prompt = (
+                    f"Créez un résumé concis mais perspicace de cette transcription de cours. "
+                    f"Tout en vous concentrant principalement sur le contenu de la transcription, vous pouvez ajouter un contexte pertinent "
+                    f"ou clarifier des concepts pour faciliter la compréhension. "
+                    f"Gardez le résumé concis mais assurez-vous qu'il soit précieux et perspicace.\n\n"
+                    f"{format_instructions}\n\n"
+                    f"TRANSCRIPTION:\n{text}\n\n"
+                    f"IMPORTANT: Votre résumé DOIT être en français, dans la même langue que la transcription."
+                )
+            else:
+                system_prompt = (
+                    "You are an expert educational assistant that creates concise, insightful summaries of class lectures. "
+                    "Feel free to supplement the transcript content with relevant background information and context "
+                    "to enhance understanding of key concepts. "
+                    "Create a clear, concise summary with key points. "
+                    "Your response MUST be in English or the same language as the transcript."
+                )
+                user_prompt = (
+                    f"Create a concise but insightful summary of this class transcript. "
+                    f"While focusing primarily on the transcript content, you may add relevant context "
+                    f"or clarify concepts that would help understanding. "
+                    f"Keep the summary concise but make sure it's valuable and insightful.\n\n"
+                    f"{format_instructions}\n\n"
+                    f"TRANSCRIPT:\n{text}\n\n"
+                    f"IMPORTANT: Your summary MUST be in the same language as the transcript (detected: {detected_language})."
+                )
             
         else:  # Outspoken & developed
             temperature = 0.8
             max_length = 3000
-            system_prompt = (
-                "You are an expert educational assistant that creates comprehensive, insightful summaries of class lectures. "
-                "Provide detailed explanations of key concepts and feel free to supplement with relevant background "
-                "information, examples, and context to enhance understanding. "
-                "Organize the summary with clear headings and detailed points for maximum clarity and learning value."
-            )
-            user_prompt = (
-                f"Create a comprehensive and insightful summary of this class transcript. "
-                f"Use headings and detailed points to organize the information clearly. "
-                f"While focusing on the transcript content, you should add relevant context, examples, "
-                f"and explanations that would enhance understanding of the material. "
-                f"Aim for a thorough and educational summary.\n\n"
-                f"TRANSCRIPT:\n{text}"
-            )
+            if detected_language == "fr":
+                system_prompt = (
+                    "Vous êtes un assistant éducatif expert qui crée des résumés complets et perspicaces des cours. "
+                    "Fournissez des explications détaillées des concepts clés et n'hésitez pas à les compléter avec des "
+                    "informations contextuelles pertinentes, des exemples et du contexte pour améliorer la compréhension. "
+                    "Organisez le résumé avec des titres clairs et des points détaillés pour une clarté et une valeur "
+                    "pédagogique maximales. "
+                    "Votre réponse DOIT être en français."
+                )
+                user_prompt = (
+                    f"Créez un résumé complet et perspicace de cette transcription de cours. "
+                    f"Utilisez des titres et des points détaillés pour organiser l'information clairement. "
+                    f"Tout en vous concentrant sur le contenu de la transcription, vous devriez ajouter un contexte pertinent, "
+                    f"des exemples et des explications qui amélioreraient la compréhension du matériel. "
+                    f"Visez un résumé approfondi et éducatif.\n\n"
+                    f"{format_instructions}\n\n"
+                    f"TRANSCRIPTION:\n{text}\n\n"
+                    f"IMPORTANT: Votre résumé DOIT être en français, dans la même langue que la transcription."
+                )
+            else:
+                system_prompt = (
+                    "You are an expert educational assistant that creates comprehensive, insightful summaries of class lectures. "
+                    "Provide detailed explanations of key concepts and feel free to supplement with relevant background "
+                    "information, examples, and context to enhance understanding. "
+                    "Organize the summary with clear headings and detailed points for maximum clarity and learning value. "
+                    "Your response MUST be in English or the same language as the transcript."
+                )
+                user_prompt = (
+                    f"Create a comprehensive and insightful summary of this class transcript. "
+                    f"Use headings and detailed points to organize the information clearly. "
+                    f"While focusing on the transcript content, you should add relevant context, examples, "
+                    f"and explanations that would enhance understanding of the material. "
+                    f"Aim for a thorough and educational summary.\n\n"
+                    f"{format_instructions}\n\n"
+                    f"TRANSCRIPT:\n{text}\n\n"
+                    f"IMPORTANT: Your summary MUST be in the same language as the transcript (detected: {detected_language})."
+                )
         
         # Generate the summary using Ollama with our preset-specific parameters
         summary = self._generate_with_ollama(
@@ -718,3 +861,92 @@ class AIProcessor:
         if summarization_preset:
             self.summarization_preset = summarization_preset
         return True 
+
+    def _detect_language(self, text):
+        """Detect the language of the text.
+        
+        Uses langdetect library if available, otherwise falls back to simple heuristics.
+        
+        Args:
+            text: The text to analyze
+            
+        Returns:
+            str: Language code ('fr' for French, 'en' for English or anything else)
+        """
+        if not text:
+            logging.warning("Empty text provided for language detection")
+            return "en"  # Default to English for empty text
+            
+        try:
+            # Get a sample of the text to detect language (first 1000 chars)
+            # This is more efficient than analyzing the entire text
+            sample = text[:1000]
+            
+            # Try to use langdetect if available
+            try:
+                from langdetect import detect, LangDetectException
+                try:
+                    lang = detect(sample)
+                    logging.info(f"Language detected by langdetect: {lang}")
+                    
+                    # Map language codes to our supported languages
+                    if lang == 'fr':
+                        return 'fr'
+                    else:
+                        # For now we only have special handling for French, default other languages to English
+                        return 'en' if lang == 'en' else 'en'
+                except LangDetectException as e:
+                    logging.warning(f"LangDetect exception: {str(e)}")
+                    # Continue to fallback method
+            except ImportError:
+                logging.warning("langdetect not installed, using basic detection")
+                
+            # Basic detection - if langdetect is not available or fails
+            french_indicators = [
+                " et ", " le ", " la ", " les ", " un ", " une ", " du ", " des ", " ce ", " cette ",
+                " que ", " qui ", " où ", " pour ", " avec ", " dans ", " votre ", " notre ", 
+                " est ", " sont ", " être ", " avoir ", " mais ", " ou ", " donc ", " ainsi ", " car ",
+                "bonjour", "merci", "au revoir", "s'il vous plaît", "monsieur", "madame",
+                " français", " je suis ", " tu es ", " il est ", " elle est ", " nous sommes ",
+                " vous êtes ", " ils sont ", " elles sont "
+            ]
+            
+            # Normalize text for comparison
+            normalized_text = " " + sample.lower() + " "
+            
+            # Count French indicators
+            french_count = sum(1 for word in french_indicators if word in normalized_text)
+            
+            # If many French indicators found, likely French
+            if french_count >= 3:
+                logging.info(f"Detected as French (matched {french_count} indicators)")
+                return "fr"
+            else:
+                logging.info(f"Detected as English (matched only {french_count} French indicators)")
+                return "en"
+                
+        except Exception as e:
+            logging.error(f"Error detecting language: {e}", exc_info=True)
+            return "en"  # Default to English on error 
+
+    def reset_whisper_model(self):
+        """Reset the Whisper model, clearing it from memory."""
+        try:
+            # Clear references to the model
+            self.whisper_model = None
+            
+            # Clear CUDA cache if available
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                logging.info("Reset Whisper model and cleared GPU cache")
+            else:
+                logging.info("Reset Whisper model")
+                
+            # Force a garbage collection
+            import gc
+            gc.collect()
+            
+            return True
+        except Exception as e:
+            logging.error(f"Error resetting Whisper model: {str(e)}")
+            return False 

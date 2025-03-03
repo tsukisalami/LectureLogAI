@@ -50,8 +50,11 @@ class Database:
             if subject['name'] == name:
                 return False  # Subject already exists
         
-        # Create a new subject with a unique ID
-        subject_id = len(subjects) + 1
+        # Create a new subject with a unique ID by finding the maximum ID and adding 1
+        subject_id = 1
+        if subjects:
+            subject_id = max(subj["id"] for subj in subjects) + 1
+        
         new_subject = {
             'id': subject_id,
             'name': name,
@@ -112,8 +115,11 @@ class Database:
         """Add a new class to the database."""
         classes = self.get_classes()
         
-        # Create a new class with a unique ID
-        class_id = len(classes) + 1
+        # Generate a truly unique ID by finding the maximum ID and adding 1
+        class_id = 1
+        if classes:
+            class_id = max(cls["id"] for cls in classes) + 1
+        
         new_class = {
             'id': class_id,
             'subject_id': subject_id,
@@ -124,6 +130,7 @@ class Database:
             'audio_path': None,
             'transcript': None,
             'summary': None,
+            'language': None,  # Store the detected language of the transcript
             'flashcards': []
         }
         

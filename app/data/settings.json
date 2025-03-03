@@ -2,6 +2,6 @@
     "theme": "dark",
     "ollama_model": "mistral:latest",
     "ollama_host": "http://localhost:11434",
-    "whisper_model_size": "base",
+    "whisper_model_size": "medium",
     "summarization_preset": "Reserved & developed"
 }
