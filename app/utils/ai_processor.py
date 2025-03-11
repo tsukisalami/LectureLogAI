@@ -21,6 +21,7 @@ class AIProcessor:
         self.summarization_preset = summarization_preset
         self.progress_callback = None
         self.safe_mode = False  # Safe mode flag for transcription
+        self.fast_mode = False  # Fast mode speeds up transcription with slightly reduced accuracy
     
     def _load_whisper_model(self, model_size=None):
         """Load the Whisper model."""
@@ -93,12 +94,14 @@ class AIProcessor:
         """Set a callback function for progress updates."""
         self.progress_callback = callback
     
-    def transcribe_audio(self, audio_file_path, retry_with_fallback=True):
+    def transcribe_audio(self, audio_file_path, retry_with_fallback=True, fast_mode=False, language=None):
         """Transcribe the provided audio file.
         
         Args:
             audio_file_path: Path to the audio file to transcribe
             retry_with_fallback: Whether to retry with fallback method if transcription fails
+            fast_mode: Enable faster transcription with reduced quality
+            language: ISO language code to force specific language (None for auto-detection)
             
         Returns:
             Dictionary containing transcription text and detected language
@@ -121,7 +124,7 @@ class AIProcessor:
             
             # Check if safe mode is enabled
             if self.safe_mode:
-                return self._fallback_transcribe(audio_file_path)
+                return self._fallback_transcribe(audio_file_path, language=language)
             
             # Check for ffmpeg before proceeding with Whisper
             if not self._check_ffmpeg_available():
@@ -150,7 +153,8 @@ class AIProcessor:
                     
                     # Try the fallback method with the specific error
                     return self._fallback_transcribe(audio_file_path, 
-                                                   custom_error=ffmpeg_error_msg)
+                                                   custom_error=ffmpeg_error_msg,
+                                                   language=language)
             
             # Load the model - add a memory check before loading
             try:
@@ -226,18 +230,18 @@ class AIProcessor:
             
             # Set transcription options
             options = {
-                "language": None,  # Allow automatic language detection
+                "language": language,  # Use specified language or None for auto-detection
                 "task": "transcribe",
                 "verbose": True,
                 "word_timestamps": False,  # Word timestamps can be very slow
-                "patience": 2,
-                "beam_size": 5,
-                "best_of": 5,
+                "patience": 1 if fast_mode else 2,
+                "beam_size": 1 if fast_mode else 5,
+                "best_of": 1 if fast_mode else 5,
                 "initial_prompt": "Bonjour, comment allez-vous? Je m'appelle Claude. J'espère que vous allez bien aujourd'hui. Veuillez transcrire avec la ponctuation et les majuscules appropriées.",
                 "fp16": torch.cuda.is_available(),
                 "without_timestamps": True,  # Don't include timestamps in output
                 "hallucination_silence_threshold": None,
-                "temperature": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                "temperature": 0.0,  # Use a single temperature value for faster processing
                 "condition_on_previous_text": True,
                 # Add important punctuation options
                 "no_speech_threshold": 0.6,
@@ -246,6 +250,10 @@ class AIProcessor:
                 # Force punctuation and capitalization for all languages
                 "suppress_tokens": [],  # Don't suppress any tokens
             }
+            
+            if fast_mode:
+                logging.info("Fast mode enabled: Using optimized settings for faster transcription")
+                print("Fast mode enabled: Using optimized settings for faster transcription")
             
             # Perform transcription
             logging.info(f"Starting transcription with options: {options}")
@@ -287,12 +295,11 @@ class AIProcessor:
             self.safe_mode = True
             
             if retry_with_fallback:
-                # Try the fallback method
-                logging.info("Attempting fallback transcription method")
-                return self._fallback_transcribe(audio_file_path, custom_error=str(e))
+                logging.error(f"Error in transcription with standard method: {str(e)}. Trying fallback method.")
+                print(f"Error in transcription: {str(e)}. Trying fallback method.")
+                return self._fallback_transcribe(audio_file_path, language=language)
             else:
-                # Re-raise the exception
-                raise
+                raise  # Re-raise the exception if fallback is not enabled
         finally:
             # Cleanup to help prevent memory leaks
             try:
@@ -302,50 +309,44 @@ class AIProcessor:
             except:
                 pass
     
-    def _fallback_transcribe(self, audio_file_path, custom_error=None):
-        """Fallback method for transcription when the primary method fails."""
+    def _fallback_transcribe(self, audio_file_path, custom_error=None, language=None):
+        """Fallback transcription method using a simpler approach.
+        
+        This method is used when the main transcription method fails or when
+        safe mode is enabled.
+        
+        Args:
+            audio_file_path: Path to the audio file to transcribe
+            custom_error: Optional custom error message to log
+            language: ISO language code to force specific language (None for auto-detection)
+            
+        Returns:
+            Dictionary containing transcription text and detected language
+        """
         try:
+            # Log the start of fallback transcription
+            print("Using fallback transcription method")
             logging.info("Using fallback transcription method")
             
-            # First try using the existing model with simpler options
-            if self.whisper_model is not None:
-                try:
-                    logging.info("Attempting fallback with existing model using simplified options")
-                    # Use very minimal options to avoid errors
-                    simple_options = {
-                        "language": None,  # Auto-detect language
-                        "fp16": torch.cuda.is_available(),  # Use GPU if available
-                        "task": "transcribe"
-                    }
-                    result = self.whisper_model.transcribe(audio_file_path, **simple_options)
-                    transcript = result.get("text", "").strip()
-                    detected_language = result.get("language", "unknown")
-                    
-                    logging.info(f"Fallback transcription completed with existing model. Language: {detected_language}")
-                    return {
-                        "text": transcript,
-                        "language": detected_language
-                    }
-                except Exception as e:
-                    logging.warning(f"Fallback with existing model failed: {str(e)}")
-                    # Continue to next fallback approach
+            # Record the start time to measure performance
+            start_time = time.time()
             
-            # If that fails, load the tiny model on CPU as last resort
-            try:
-                model = whisper.load_model("tiny", device="cpu")
-                logging.info("Loaded tiny model on CPU for fallback transcription")
-            except Exception as e:
-                logging.error(f"Failed to load tiny model: {str(e)}")
-                return {
-                    "text": f"Transcription failed: {custom_error or 'All transcription methods failed'}",
-                    "language": "unknown"
-                }
+            # Load a small model for fallback
+            fallback_model_size = "tiny"  # Always use tiny model for fallback for speed
             
-            # Use minimal options for stability
+            # Load the model
+            print(f"Loading {fallback_model_size} model on {'GPU' if torch.cuda.is_available() else 'CPU'} for fallback transcription")
+            logging.info(f"Loaded {fallback_model_size} model on {'GPU' if torch.cuda.is_available() else 'CPU'} for fallback transcription")
+            model = whisper.load_model(fallback_model_size)
+            
+            # Keep options minimal for fallback
             options = {
-                "language": None,  # Auto-detect language
-                "fp16": False,     # Disable fp16 for CPU
-                "task": "transcribe"
+                "language": language,
+                "task": "transcribe",
+                "beam_size": 1,
+                "best_of": 1,
+                "patience": 1,
+                "temperature": 0.0,
             }
             
             # Perform transcription

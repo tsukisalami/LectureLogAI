@@ -1,29 +1,5 @@
 [
     {
-        "id": 2,
-        "subject_id": 2,
-        "name": "2",
-        "date": "2025-03-01",
-        "chapter": null,
-        "created_at": "2025-03-01T18:43:25.339541",
-        "audio_path": "C:\\Programming\\AI\\Transcriber\\app\\data\\recordings\\recording_20250303-012842.wav",
-        "transcript": " Hello, hello, hello.",
-        "summary": "1. Introduction: The class began with a greeting from the instructor.\n2. Topic Discussion: The focus of the lecture was on \"Circular Functions.\"\n3. Definition: Circular functions were described as trigonometric functions that operate on angles in radian measure.\n4. Sine Function: The sine function was introduced, defined as the y-coordinate of a point on the unit circle when an angle \u03b8 is measured counterclockwise from the positive x-axis.\n5. Cosine Function: The cosine function was explained as the x-coordinate of a point on the unit circle when an angle \u03b8 is measured counterclockwise from the positive x-axis.\n6. Tangent Function: The tangent function was defined as the ratio of the sine and cosine functions.\n7. Unit Circle: The unit circle was mentioned as a helpful visual aid for understanding circular functions.\n8. No further details or examples were provided in the transcript, so no additional points are included.",
-        "flashcards": []
-    },
-    {
-        "id": 3,
-        "subject_id": 3,
-        "name": "2",
-        "date": "2025-03-03",
-        "chapter": null,
-        "created_at": "2025-03-03T01:37:01.936928",
-        "audio_path": "C:\\Programming\\AI\\Transcriber\\app\\data\\recordings\\recording_20250303-013727.wav",
-        "transcript": " Hello, this class is going to be about ducks and dogs. Nothing else just ducks and dogs. The only thing I want you guys to learn for the exam tomorrow is that dogs can outlive ducks by around 10 years, give or take, and that they are three times as intelligent.",
-        "summary": "1. Topic of the class: Ducks and Dogs\n2. Exam focus: Information about lifespan and intelligence of ducks and dogs\n3. Duck lifespan: Approximately 5-10 years\n4. Dog lifespan: Around 15-20 years (10 years more than ducks)\n5. Intelligence comparison: Dogs are three times as intelligent as ducks",
-        "flashcards": []
-    },
-    {
         "id": 4,
         "subject_id": 3,
         "name": "french",
@@ -33,6 +9,58 @@
         "audio_path": "C:\\Programming\\AI\\Transcriber\\app\\data\\recordings\\recording_20250303-014045.wav",
         "transcript": "Du coup, la derni\u00e8re fois on a parl\u00e9 des raisons pourquoi on pensait que l'art n'\u00e9tait pas une activit\u00e9 technique. C'\u00e9tait une activit\u00e9 qui n\u00e9cessitait une autre partie du cerveau. On a r\u00e9f\u00e9renc\u00e9 le g\u00e9nie dans les soci\u00e9t\u00e9s grecques anciennes et avec les muses on a parl\u00e9 du g\u00e9nie. Maintenant on est en train de dire que la th\u00e9orie de G\u00f6bel n'est pas si s\u00fbre puisqu'en effet il est impossible pour tout le monde de se mettre d'accord sur une interpr\u00e9tation de l'art et du coup ce serait impossible pour l'art d'\u00eatre consid\u00e9r\u00e9 un moyen par lequel une soci\u00e9t\u00e9 avance vers un autre futur commun. C'est \u00e0 dire l'id\u00e9e qu'avait implant\u00e9 l'artiste dans l'\u0153uvre artistique. Cette id\u00e9e peut \u00eatre per\u00e7ue diff\u00e9remment en d\u00e9pendant des personnes.",
         "summary": " **R\u00e9sum\u00e9 du cours sur l'Art et sa signification**\n\n1. **Contexte de discussion**\n    - La derni\u00e8re fois, on a abord\u00e9 les raisons pourquoi on pensait que l'art n'\u00e9tait pas une activit\u00e9 technique.\n\n2. **Raisons pourquoi on pensait que l'art n'\u00e9tait pas technique**\n    - L'activit\u00e9 n\u00e9cessitait une partie du cerveau diff\u00e9rente de celle utilis\u00e9e pour les activit\u00e9s techniques.\n    - On a fait r\u00e9f\u00e9rence au g\u00e9nie dans les soci\u00e9t\u00e9s grecques anciennes, en particulier avec les muses.\n\n3. **Doute sur la th\u00e9orie de G\u00f6bel**\n    - La th\u00e9orie de G\u00f6bel, selon laquelle l'art serait un moyen par lequel une soci\u00e9t\u00e9 avancerait vers un autre futur commun, est remise en question.\n    - Il est impossible pour tout le monde de s'accorder sur une interpr\u00e9tation de l'art.\n    - Ainsi, consid\u00e9rer l'art comme un moyen d'avancer vers un autre futur commun serait impossible.\n\n4. **Impact de la perception individuelle**\n    - Cette id\u00e9e que l'artiste avait implant\u00e9e dans son \u0153uvre peut \u00eatre per\u00e7ue diff\u00e9remment en fonction des personnes.",
+        "flashcards": []
+    },
+    {
+        "id": 6,
+        "subject_id": 4,
+        "name": "SVT",
+        "date": "2025-03-03",
+        "chapter": null,
+        "created_at": "2025-03-03T10:37:49.367375",
+        "audio_path": "C:\\LectureLogAI\\LectureLogAI\\app\\data\\recordings\\Cit\u00e9 Scolaire Grand Air.m4a",
+        "transcript": "Transcription failed: [WinError 2] The system cannot find the file specified",
+        "summary": null,
+        "language": "unknown",
+        "flashcards": []
+    },
+    {
+        "id": 7,
+        "subject_id": 3,
+        "name": "2",
+        "date": "2025-03-03",
+        "chapter": null,
+        "created_at": "2025-03-03T11:43:38.608489",
+        "audio_path": null,
+        "transcript": null,
+        "summary": null,
+        "language": null,
+        "flashcards": []
+    },
+    {
+        "id": 8,
+        "subject_id": 4,
+        "name": "1",
+        "date": "2025-03-03",
+        "chapter": null,
+        "created_at": "2025-03-03T16:00:37.871831",
+        "audio_path": "C:\\LectureLogAI\\LectureLogAI\\app\\data\\recordings\\recording_20250303-175107.wav",
+        "transcript": "Je m'appelle Claude. J'esp\u00e8re que vous allez bien aujourd'hui. J'esp\u00e8re que vous allez bien aujourd'hui.",
+        "summary": "Text too short to summarize",
+        "language": "fr",
+        "flashcards": []
+    },
+    {
+        "id": 9,
+        "subject_id": 4,
+        "name": "maths 3",
+        "date": "2025-03-10",
+        "chapter": null,
+        "created_at": "2025-03-10T17:35:16.295784",
+        "audio_path": "C:\\LectureLogAI\\LectureLogAI\\app\\data\\recordings\\recording_20250310-173657.wav",
+        "transcript": "Merci.",
+        "summary": null,
+        "language": "fr",
         "flashcards": []
     }
 ]

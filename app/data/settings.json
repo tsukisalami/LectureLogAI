@@ -1,7 +1,10 @@
 {
     "theme": "dark",
-    "ollama_model": "mistral:latest",
+    "ollama_model": "qwen2.5:0.5b",
     "ollama_host": "http://localhost:11434",
-    "whisper_model_size": "medium",
-    "summarization_preset": "Reserved & developed"
+    "whisper_model_size": "large",
+    "summarization_preset": "Reserved & concise",
+    "title_font_size": 30,
+    "heading_font_size": 18,
+    "text_font_size": 12
 }

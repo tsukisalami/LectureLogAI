@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QDateEdit, QTextEdit, QProgressDialog, QCheckBox,
     QProgressBar, QGroupBox, QRadioButton, QButtonGroup,
     QApplication, QAction, QSlider, QStyle, QToolButton,
-    QShortcut, QSpinBox
+    QShortcut, QSpinBox, QFileDialog
 )
 from PyQt5.QtCore import Qt, QDateTime, QTimer, pyqtSignal, QObject, QUrl, QSize
 from PyQt5.QtGui import QFont, QIcon, QPalette, QColor
@@ -435,6 +435,12 @@ class SettingsDialog(QDialog):
             self.safe_mode_cb.setChecked(self.ai_processor.safe_mode)
         ollama_layout.addRow("", self.safe_mode_cb)
         
+        # Fast mode checkbox
+        self.fast_mode_cb = QCheckBox("Fast Mode")
+        self.fast_mode_cb.setToolTip("Speed up transcription by reducing accuracy slightly")
+        self.fast_mode_cb.stateChanged.connect(self.toggle_fast_mode)
+        ollama_layout.addRow("", self.fast_mode_cb)
+        
         ollama_group.setLayout(ollama_layout)
         ai_layout.addWidget(ollama_group)
         ai_layout.addStretch()
@@ -529,6 +535,7 @@ class SettingsDialog(QDialog):
                     summarization_preset=summarization_preset
                 )
                 self.ai_processor.safe_mode = self.safe_mode_cb.isChecked()
+                self.ai_processor.fast_mode = self.fast_mode_cb.isChecked()
             
             # Apply theme if parent is MainWindow
             if self.parent and hasattr(self.parent, 'apply_theme'):
@@ -539,6 +546,11 @@ class SettingsDialog(QDialog):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to save settings: {str(e)}")
 
+    def toggle_fast_mode(self, state):
+        """Toggle fast mode for transcription."""
+        if hasattr(self, 'ai_processor') and self.ai_processor:
+            self.ai_processor.fast_mode = state == Qt.Checked
+            
 class MainWindow(QMainWindow):
     """Main application window."""
     
@@ -715,6 +727,39 @@ class MainWindow(QMainWindow):
         self.audio_container.setMinimumHeight(100)
         self.transcript_layout.addWidget(self.audio_container)
         
+        # Add a language selection dropdown to the transcript tab
+        # Language selection (before the transcript text)
+        language_layout = QHBoxLayout()
+        language_label = QLabel("Language:")
+        self.language_combo = QComboBox()
+        self.language_combo.addItem("Auto Detect", None)
+        
+        # Add common languages
+        languages = [
+            ("English", "en"), 
+            ("French", "fr"),
+            ("Spanish", "es"),
+            ("German", "de"),
+            ("Italian", "it"),
+            ("Portuguese", "pt"),
+            ("Russian", "ru"),
+            ("Chinese", "zh"),
+            ("Japanese", "ja"),
+            ("Korean", "ko"),
+            ("Arabic", "ar")
+        ]
+        
+        for name, code in languages:
+            self.language_combo.addItem(name, code)
+            
+        language_layout.addWidget(language_label)
+        language_layout.addWidget(self.language_combo)
+        language_layout.addStretch()
+        
+        # Add the language layout to the transcript layout, before the transcript_text
+        self.transcript_layout.addLayout(language_layout)
+        
+        # Add the transcript text after the language selection
         self.transcript_text = QTextEdit()
         self.transcript_text.setReadOnly(True)
         self.transcript_text.setPlaceholderText("Transcript will appear here")
@@ -754,6 +799,10 @@ class MainWindow(QMainWindow):
         self.record_button = QPushButton("Record Audio")
         self.record_button.clicked.connect(self.record_audio)
         
+        # Import audio button
+        self.import_button = QPushButton("Import Audio")
+        self.import_button.clicked.connect(self.import_audio)
+        
         # Transcribe button
         self.transcribe_button = QPushButton("Transcribe")
         self.transcribe_button.clicked.connect(self.transcribe_audio)
@@ -764,14 +813,21 @@ class MainWindow(QMainWindow):
         self.safe_mode_cb.setToolTip("Use a simpler transcription method that may be more reliable on some systems")
         self.safe_mode_cb.stateChanged.connect(self.toggle_safe_mode)
         
+        # Fast mode checkbox
+        self.fast_mode_cb = QCheckBox("Fast Mode")
+        self.fast_mode_cb.setToolTip("Speed up transcription by reducing accuracy slightly")
+        self.fast_mode_cb.stateChanged.connect(self.toggle_fast_mode)
+        
         # Summarize button
         self.summarize_button = QPushButton("Summarize")
         self.summarize_button.clicked.connect(self.summarize_transcript)
         self.summarize_button.setEnabled(False)  # Disable until transcript is available
         
         self.action_layout.addWidget(self.record_button)
+        self.action_layout.addWidget(self.import_button)
         self.action_layout.addWidget(self.transcribe_button)
         self.action_layout.addWidget(self.safe_mode_cb)
+        self.action_layout.addWidget(self.fast_mode_cb)
         self.action_layout.addStretch()
         self.action_layout.addWidget(self.summarize_button)
         
@@ -1346,8 +1402,108 @@ class MainWindow(QMainWindow):
                                        "Audio recording saved successfully.\n\n"
                                        "You can now click 'Transcribe' to convert the audio to text.")
     
+    def import_audio(self):
+        """Import audio file (.wav or .m4a) for the selected class."""
+        # Validate class selection
+        row = self.classes_list.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "Error", "Please select a class first.")
+            return
+        
+        # Get class ID
+        if not self.classes_list.item(row) or not self.classes_list.item(row).data(Qt.UserRole):
+            QMessageBox.warning(self, "Error", "Invalid class selection. Please try selecting the class again.")
+            return
+        
+        class_id = self.classes_list.item(row).data(Qt.UserRole)
+        
+        # Open file dialog to select an audio file
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Audio File",
+            "",
+            "Audio Files (*.wav *.m4a);;WAV Files (*.wav);;M4A Files (*.m4a);;All Files (*)"
+        )
+        
+        if not file_path:
+            # User cancelled
+            return
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            QMessageBox.warning(self, "Error", f"File not found: {file_path}")
+            return
+        
+        # Check if file is a supported format
+        if not (file_path.lower().endswith('.wav') or file_path.lower().endswith('.m4a')):
+            QMessageBox.warning(self, "Error", "Please select a WAV or M4A format audio file.")
+            return
+        
+        try:
+            # Get the destination directory
+            dest_dir = os.path.join('app', 'data', 'recordings')
+            os.makedirs(dest_dir, exist_ok=True)
+            
+            # Create a destination filename (use the original filename)
+            file_name = os.path.basename(file_path)
+            dest_path = os.path.join(dest_dir, file_name)
+            
+            # Check if a file with the same name already exists
+            if os.path.exists(dest_path):
+                # Add a timestamp to make the filename unique
+                import time
+                timestamp = int(time.time())
+                name, ext = os.path.splitext(file_name)
+                dest_path = os.path.join(dest_dir, f"{name}_{timestamp}{ext}")
+            
+            # Copy the file to the recordings directory
+            import shutil
+            shutil.copy2(file_path, dest_path)
+            
+            # Convert to absolute path
+            dest_path = os.path.abspath(dest_path)
+            
+            # Update database
+            self.log_to_console(f"Saving imported audio path to database: {dest_path}")
+            if not self.db.update_class(class_id, audio_path=dest_path):
+                QMessageBox.warning(self, "Database Error", 
+                                  "Failed to update the database with the audio path.\n"
+                                  "Please try importing again.")
+                self.log_to_console(f"Error: Failed to update database with audio path")
+                return
+            
+            # Get the updated class info
+            updated_class = self.db.get_class(class_id)
+            if not updated_class or not updated_class.get('audio_path'):
+                QMessageBox.warning(self, "Database Error", 
+                                  "Failed to update the database with the audio path.\n"
+                                  "Please try importing again.")
+                self.log_to_console(f"Error: Failed to update database with audio path")
+                return
+            
+            # Enable transcribe button and update UI
+            self.transcribe_button.setText("Transcribe")
+            self.transcribe_button.setEnabled(True)
+            
+            # Update UI with audio player
+            try:
+                audio_file = os.path.basename(dest_path)
+                self.create_audio_player_ui(dest_path, audio_file)
+                self.log_to_console(f"Imported audio file: {audio_file}")
+                
+                # Show confirmation message
+                QMessageBox.information(self, "Audio Imported", 
+                                      "Audio file imported successfully.\n\n"
+                                      "You can now click 'Transcribe' to convert the audio to text.")
+            except Exception as e:
+                self.log_to_console(f"Error creating audio player: {str(e)}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Import Error", f"Failed to import audio file: {str(e)}")
+            self.log_to_console(f"Error importing audio file: {str(e)}")
+            
     def transcribe_audio(self):
-        """Transcribe the recorded audio."""
+        """Transcribe the audio for the selected class."""
         try:
             # Safety check 1: Make sure a class is selected
             row = self.classes_list.currentRow()
@@ -1418,31 +1574,55 @@ class MainWindow(QMainWindow):
             # Reset cancellation flag
             self.transcription_cancelled = False
             
-            # Transcription worker thread
+            # Clear any previous transcript first - do this on main thread
+            self.transcript_text.clear()
+            
+            # Show progress UI on the main thread
+            self._show_progress(active=True, message="Transcribing audio...", process_type="transcription")
+            
+            # Create a worker thread for transcription
             def transcription_worker():
-                transcript = None
-                error_occurred = False
-                error_message = ""
-                detected_language = None
-                
+                nonlocal self
                 try:
+                    # Set the transcription process as current
+                    self.current_process = "transcription"
+                    self.transcription_cancelled = False
+                    
+                    # Initialize variables for results
+                    transcript = None
+                    error_occurred = False
+                    error_message = ""
+                    detected_language = None
+                    
+                    # Get fast mode setting
+                    fast_mode = hasattr(self.ai_processor, 'fast_mode') and self.ai_processor.fast_mode
+                    
+                    # Get the selected language (if any)
+                    selected_language = self.language_combo.currentData()
+                    
+                    # Begin transcription with retry flag set based on safe mode
+                    # Also pass in retry_with_fallback=True to enable automatic fallback
+                    transcript_result = self.ai_processor.transcribe_audio(
+                        audio_path, 
+                        retry_with_fallback=True,
+                        fast_mode=fast_mode,
+                        language=selected_language
+                    )
+                    
                     # Check for cancellation before starting
                     if hasattr(self, 'transcription_cancelled') and self.transcription_cancelled:
                         logging.info("Transcription was cancelled before it started")
                         self.transcription_signals.finished.emit("", class_id, True, "Cancelled by user")
                         return
                     
-                    # Perform transcription
-                    result = self.ai_processor.transcribe_audio(audio_path)
-                    
                     # Extract transcript and language
-                    if isinstance(result, dict):
-                        transcript = result.get("text", "")
-                        detected_language = result.get("language", "unknown")
+                    if isinstance(transcript_result, dict):
+                        transcript = transcript_result.get("text", "")
+                        detected_language = transcript_result.get("language", "unknown")
                         logging.info(f"Transcription language detected: {detected_language}")
                     else:
                         # Handle legacy format (string)
-                        transcript = result
+                        transcript = transcript_result
                         detected_language = "unknown"
                     
                     # Check for cancellation after transcription
@@ -1467,7 +1647,7 @@ class MainWindow(QMainWindow):
                 # Emit the signal to update UI - transcript and detected language 
                 self.transcription_signals.finished.emit(transcript or "", class_id, error_occurred, error_message)
             
-            # Start worker thread
+            # Start the transcription worker thread
             self.transcription_thread = threading.Thread(target=transcription_worker, daemon=True)
             self.transcription_thread.start()
             
@@ -1627,7 +1807,12 @@ class MainWindow(QMainWindow):
         self.summarization_signals = SummarizationSignals()
         self.summarization_signals.finished.connect(self._handle_summarization_result)
         
-        # Reset cancellation flag
+        # Prepare UI before starting worker thread
+        # These operations need to be on the main thread
+        self.summary_text.clear()
+        
+        # Set the summarization process as current (on main thread)
+        self.current_process = "summarization"
         self.summarization_cancelled = False
         
         # Use a separate thread for the summarization process
@@ -1951,6 +2136,14 @@ class MainWindow(QMainWindow):
             self.log_to_console(f"Safe mode {mode} for transcription")
             logging.info(f"Safe mode {mode} for transcription")
 
+    def toggle_fast_mode(self, state):
+        """Toggle fast mode for transcription."""
+        if hasattr(self, 'ai_processor'):
+            self.ai_processor.fast_mode = state == Qt.Checked
+            mode = "enabled" if self.ai_processor.fast_mode else "disabled"
+            self.log_to_console(f"Fast mode {mode} for transcription")
+            logging.info(f"Fast mode {mode} for transcription")
+
     def log_to_console(self, message):
         """Log a message to the console tab."""
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
@@ -2076,6 +2269,11 @@ class MainWindow(QMainWindow):
         record_action = QAction("Record Audio", self)
         record_action.triggered.connect(self.record_audio)
         recording_menu.addAction(record_action)
+        
+        # Import audio action
+        import_action = QAction("Import Audio File", self)
+        import_action.triggered.connect(self.import_audio)
+        recording_menu.addAction(import_action)
         
         # Transcribe action
         transcribe_action = QAction("Transcribe", self)
